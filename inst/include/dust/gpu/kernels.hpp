@@ -22,6 +22,21 @@ void update_gpu(size_t time,
                 interleaved<typename T::real_type> state_next);
 
 template <typename T>
+using kernel_ptr_t = void (*) (
+  size_t,
+  const interleaved<typename T::real_type>,
+  interleaved<int>,
+  interleaved<typename T::real_type>,
+  const int *,
+  const typename T::real_type *,
+  typename T::rng_state_type&,
+  interleaved<typename T::real_type>
+);
+
+template <typename T>
+std::vector<kernel_ptr_t<T>> get_gpu_kernels();
+
+template <typename T>
 __device__
 typename T::real_type compare_gpu(
                    const interleaved<typename T::real_type> state,
@@ -70,101 +85,6 @@ void scatter_device(const size_t* index,
     scatter_state[i] = state[scatter_index];
   }
 }
-
-template <typename T>
-__global__
-void run_particles(size_t time_start,
-                   size_t time_end,
-                   size_t n_particles,
-                   size_t n_pars,
-                   typename T::real_type * state,
-                   typename T::real_type * state_next,
-                   int * internal_int,
-                   typename T::real_type * internal_real,
-                   size_t n_shared_int, size_t n_shared_real,
-                   const int * shared_int,
-                   const typename T::real_type * shared_real,
-                   typename T::rng_state_type::int_type * rng_state,
-                   bool use_shared_int,
-                   bool use_shared_real) {
-  using real_type = typename T::real_type;
-  using rng_state_type = typename T::rng_state_type;
-  using rng_int_type = typename rng_state_type::int_type;
-  const size_t n_particles_each = n_particles / n_pars;
-  const auto data = nullptr;
-  const bool data_is_shared = false;
-
-#ifdef __CUDA_ARCH__
-  const int block_per_pars = (n_particles_each + blockDim.x - 1) / blockDim.x;
-  int j;
-  if (use_shared_int || use_shared_real) {
-    j = blockIdx.x / block_per_pars;
-  } else {
-    j = (blockIdx.x * blockDim.x + threadIdx.x) / n_particles_each;
-  }
-  device_ptrs<T> shared_state =
-    load_shared_state<T>(j,
-                         n_shared_int,
-                         n_shared_real,
-                         shared_int,
-                         shared_real,
-                         data,             // nullptr
-                         use_shared_int,
-                         use_shared_real,
-                         data_is_shared);  // false
-
-  int i, max_i;
-  if (use_shared_int || use_shared_real) {
-    // Pick particle index based on block, don't process if off the end
-    i = j * n_particles_each + (blockIdx.x % block_per_pars) * blockDim.x +
-      threadIdx.x;
-    max_i = n_particles_each * (j + 1);
-  } else {
-    // Otherwise CUDA thread number = particle
-    i = blockIdx.x * blockDim.x + threadIdx.x;
-    max_i = n_particles;
-  }
-
-  if (i < max_i) {
-#else
-  // omp here
-  for (size_t i = 0; i < n_particles; ++i) {
-    const int j = i / n_particles_each;
-    device_ptrs<T> shared_state =
-      load_shared_state<T>(j,
-                           n_shared_int,
-                           n_shared_real,
-                           shared_int,
-                           shared_real,
-                           data,             // nullptr
-                           use_shared_int,   // ignored
-                           use_shared_real,  // ignored
-                           data_is_shared);  // false
-#endif
-    interleaved<real_type> p_state(state, i, n_particles);
-    interleaved<real_type> p_state_next(state_next, i, n_particles);
-    interleaved<int> p_internal_int(internal_int, i, n_particles);
-    interleaved<real_type> p_internal_real(internal_real, i, n_particles);
-    interleaved<rng_int_type> p_rng(rng_state, i, n_particles);
-
-    rng_state_type rng_block = get_rng_state<rng_state_type>(p_rng);
-    for (size_t time = time_start; time < time_end; ++time) {
-      update_gpu<T>(time,
-                    p_state,
-                    p_internal_int,
-                    p_internal_real,
-                    shared_state.shared_int,
-                    shared_state.shared_real,
-                    rng_block,
-                    p_state_next);
-      SYNCWARP
-
-      interleaved<real_type> tmp = p_state;
-      p_state = p_state_next;
-      p_state_next = tmp;
-    }
-    put_rng_state(rng_block, p_rng);
-  }
 }
 
 

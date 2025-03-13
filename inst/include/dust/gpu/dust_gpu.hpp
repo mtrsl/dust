@@ -228,40 +228,37 @@ public:
     if (time_end > time_) {
       const size_t time_start = time_;
 #ifdef __NVCC__
-      dust::gpu::run_particles<T><<<cuda_pars_.run.block_count,
-                                     cuda_pars_.run.block_size,
-                                     cuda_pars_.run.shared_size_bytes,
-                                     kernel_stream_.stream()>>>(
-                      time_start, time_end, n_particles_total_,
-                      n_pars_effective(),
-                      device_state_.y.data(),
-                      device_state_.y_next.data(),
-                      device_state_.internal_int.data(),
-                      device_state_.internal_real.data(),
-                      device_state_.n_shared_int,
-                      device_state_.n_shared_real,
-                      device_state_.shared_int.data(),
-                      device_state_.shared_real.data(),
-                      device_state_.rng.data(),
-                      cuda_pars_.run.shared_int,
-                      cuda_pars_.run.shared_real);
+      //dust::gpu::run_particles<T><<<cuda_pars_.run.block_count,
+                                     //cuda_pars_.run.block_size,
+                                     //cuda_pars_.run.shared_size_bytes,
+                                     //kernel_stream_.stream()>>>(
+      run_particles(
+          time_start,
+          time_end
+          device_state_.n_shared_int,
+          device_state_.n_shared_real,
+          device_state_.shared_int.data(),
+          device_state_.shared_real.data(),
+          device_state_.rng.data(),
+          cuda_pars_.run.shared_int,
+          cuda_pars_.run.shared_real);
       kernel_stream_.sync();
 #else
       const bool use_shared_int = false;
       const bool use_shared_real = false;
-      dust::gpu::run_particles<T>(time_start, time_end, n_particles_total_,
-                      n_pars_effective(),
-                      device_state_.y.data(),
-                      device_state_.y_next.data(),
-                      device_state_.internal_int.data(),
-                      device_state_.internal_real.data(),
-                      device_state_.n_shared_int,
-                      device_state_.n_shared_real,
-                      device_state_.shared_int.data(),
-                      device_state_.shared_real.data(),
-                      device_state_.rng.data(),
-                      use_shared_int,
-                      use_shared_real);
+      run_particles(time_start, time_end, n_particles_total_,
+          n_pars_effective(),
+          device_state_.y.data(),
+          device_state_.y_next.data(),
+          device_state_.internal_int.data(),
+          device_state_.internal_real.data(),
+          device_state_.n_shared_int,
+          device_state_.n_shared_real,
+          device_state_.shared_int.data(),
+          device_state_.shared_real.data(),
+          device_state_.rng.data(),
+          use_shared_int,
+          use_shared_real);
 #endif
 
       // In the inner loop, the swap will keep the locally scoped
@@ -557,6 +554,48 @@ public:
 #endif
   }
 
+template <typename T>
+void run_particles(size_t time_start, size_t time_end) {
+    for (size_t time = time_start; time < time_end; ++time) {
+      for (auto kernel : get_gpu_kernels()) {
+        kernel<<<cuda_pars_.run.block_count,
+          cuda_pars_.run.block_size,
+          cuda_pars_.run.shared_size_bytes,
+          kernel_stream_.stream()>>>(
+              time,
+              n_particles_total_,
+              n_pars_effective(),
+              device_state_.y.data(),
+              device_state_.y_next.data(),
+              device_state_.internal_int.data(),
+              device_state_.internal_real.data(),
+              device_state_.n_shared_int,
+              device_state_.n_shared_real,
+              device_state_.shared_int.data(),
+              device_state_.shared_real.data(),
+              device_state_.rng.data(),
+              cuda_pars_.run.shared_int,
+              cuda_pars_.run.shared_real);
+      }
+
+      // mjr
+      // I think this can only be called from a kernel?
+      // Does this need to be called at the end of each kernel?
+      // Or at all?
+      //SYNCWARP
+
+      interleaved<real_type> p_state(state, i, n_particles);
+      interleaved<real_type> p_state_next(state_next, i, n_particles);
+
+      // mjr
+      // Should this be run once here (in host code) after all the kernels finish?
+      // Or should it be run at the end of each kernel?
+      // If the latter, we need to copy the definitions of p_state etc here
+      interleaved<real_type> tmp = p_state;
+      p_state = p_state_next;
+      p_state_next = tmp;
+    }
+  }
 private:
   // delete move and copy to avoid accidentally using them
   dust_gpu(const dust_gpu &) = delete;
