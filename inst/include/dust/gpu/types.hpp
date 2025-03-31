@@ -694,6 +694,18 @@ void put_rng_state(rng_state_type& rng_state,
   }
 }
 
+template <typename T>
+using update_gpu_ptr = void (*) (
+  size_t,
+  const interleaved<typename T::real_type>,
+  interleaved<int>,
+  interleaved<typename T::real_type>,
+  const int *,
+  const typename T::real_type *,
+  typename T::rng_state_type&,
+  interleaved<typename T::real_type>
+);
+
 }
 }
 

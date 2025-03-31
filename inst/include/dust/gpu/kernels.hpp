@@ -10,16 +10,24 @@ namespace gpu {
 // This is the main model update, will be defined by the model code
 // (see inst/examples/variable.cpp for an example). This is unique
 // within the file in that we expect that the user will specialise it.
+//template <typename T>
+//__device__
+//void update_gpu(size_t time,
+                //const interleaved<typename T::real_type> state,
+                //interleaved<int> internal_int,
+                //interleaved<typename T::real_type> internal_real,
+                //const int * shared_int,
+                //const typename T::real_type * shared_real,
+                //typename T::rng_state_type& rng_state,
+                //interleaved<typename T::real_type> state_next);
+
 template <typename T>
 __device__
-void update_gpu(size_t time,
-                const interleaved<typename T::real_type> state,
-                interleaved<int> internal_int,
-                interleaved<typename T::real_type> internal_real,
-                const int * shared_int,
-                const typename T::real_type * shared_real,
-                typename T::rng_state_type& rng_state,
-                interleaved<typename T::real_type> state_next);
+size_t get_num_update_gpu_fns();
+
+template <typename T>
+__device__
+update_gpu_ptr<T>* get_update_gpu_fns();
 
 template <typename T>
 __device__
@@ -94,6 +102,11 @@ void run_particles(size_t time_start,
   const auto data = nullptr;
   const bool data_is_shared = false;
 
+  update_gpu_ptr<T>* update_gpu_fns = get_update_gpu_fns<T>();
+  size_t num_update_gpu_fns = get_num_update_gpu_fns<T>();
+
+  //printf("number of update fns: %llu\n", num_update_gpu_fns);
+
 #ifdef __CUDA_ARCH__
   const int block_per_pars = (n_particles_each + blockDim.x - 1) / blockDim.x;
   int j;
@@ -149,14 +162,21 @@ void run_particles(size_t time_start,
 
     rng_state_type rng_block = get_rng_state<rng_state_type>(p_rng);
     for (size_t time = time_start; time < time_end; ++time) {
-      update_gpu<T>(time,
-                    p_state,
-                    p_internal_int,
-                    p_internal_real,
-                    shared_state.shared_int,
-                    shared_state.shared_real,
-                    rng_block,
-                    p_state_next);
+      for (size_t f = 0; f < num_update_gpu_fns; ++f) {
+        //printf("thread_id: %i time: %llu; executing update fn: %llu\n", i, time, f);
+        //update_gpu<T>(
+        update_gpu_fns[f](
+          time,
+          p_state,
+          p_internal_int,
+          p_internal_real,
+          shared_state.shared_int,
+          shared_state.shared_real,
+          rng_block,
+          p_state_next
+        );
+      }
+
       SYNCWARP
 
       interleaved<real_type> tmp = p_state;
