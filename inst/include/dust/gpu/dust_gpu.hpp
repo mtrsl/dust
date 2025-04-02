@@ -282,16 +282,6 @@ public:
                       use_shared_real);
 #endif
 
-      // In the inner loop, the swap will keep the locally scoped
-      // interleaved variables updated, but the interleaved variables
-      // passed in have not yet been updated.  If an even number of
-      // time steps have been run state will have been swapped back into the
-      // original place, but an on odd number of time steps the passed
-      // variables need to be swapped.
-      if ((time_end - time_start) % 2 == 1) {
-        device_state_.swap();
-      }
-
       select_needed_ = true;
       time_ = time_end;
     }
