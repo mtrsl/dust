@@ -228,24 +228,42 @@ public:
     if (time_end > time_) {
       const size_t time_start = time_;
 #ifdef __NVCC__
-      dust::gpu::run_particles<T><<<cuda_pars_.run.block_count,
-                                     cuda_pars_.run.block_size,
-                                     cuda_pars_.run.shared_size_bytes,
-                                     kernel_stream_.stream()>>>(
-                      time_start, time_end, n_particles_total_,
-                      n_pars_effective(),
-                      device_state_.y.data(),
-                      device_state_.y_next.data(),
-                      device_state_.internal_int.data(),
-                      device_state_.internal_real.data(),
-                      device_state_.n_shared_int,
-                      device_state_.n_shared_real,
-                      device_state_.shared_int.data(),
-                      device_state_.shared_real.data(),
-                      device_state_.rng.data(),
-                      cuda_pars_.run.shared_int,
-                      cuda_pars_.run.shared_real);
-      kernel_stream_.sync();
+      const size_t n_update_fns = dust::gpu::get_num_update_gpu_fns<T>();
+
+      for (size_t time = time_start; time < time_end; ++time) {
+        for (size_t update_fn_idx = 0; update_fn_idx < n_update_fns; update_fn_idx += 1) {
+          dust::gpu::run_particles<T><<<cuda_pars_.run.block_count,
+                                        cuda_pars_.run.block_size,
+                                        cuda_pars_.run.shared_size_bytes,
+                                        kernel_stream_.stream()>>>(
+                          time,
+                          n_particles_total_,
+                          n_pars_effective(),
+                          device_state_.y.data(),
+                          device_state_.y_next.data(),
+                          device_state_.internal_int.data(),
+                          device_state_.internal_real.data(),
+                          device_state_.n_shared_int,
+                          device_state_.n_shared_real,
+                          device_state_.shared_int.data(),
+                          device_state_.shared_real.data(),
+                          device_state_.rng.data(),
+                          cuda_pars_.run.shared_int,
+                          cuda_pars_.run.shared_real,
+                          update_fn_idx);
+
+          kernel_stream_.sync();
+        }
+
+        // Swap the y and y_next pointers after each timestep. Previously, each
+        // gpu thread had its own view of which pointer was which. Timestepping
+        // was in the kernel and the pointers were being swapped after each
+        // timestep, but each gpu thread (~particle:param combo?) could
+        // independently timestep, only writing data to the parts of state that
+        // it was meant to. Now we step all the particles together, so swapping
+        // pointers outside the kernel makes most sense.
+        device_state_.swap();
+      }
 #else
       const bool use_shared_int = false;
       const bool use_shared_real = false;

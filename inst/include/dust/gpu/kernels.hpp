@@ -22,7 +22,7 @@ namespace gpu {
                 //interleaved<typename T::real_type> state_next);
 
 template <typename T>
-__device__
+__host__ __device__
 size_t get_num_update_gpu_fns();
 
 template <typename T>
@@ -81,8 +81,7 @@ void scatter_device(const size_t* index,
 
 template <typename T>
 __global__
-void run_particles(size_t time_start,
-                   size_t time_end,
+void run_particles(size_t time,
                    size_t n_particles,
                    size_t n_pars,
                    typename T::real_type * state,
@@ -94,7 +93,8 @@ void run_particles(size_t time_start,
                    const typename T::real_type * shared_real,
                    typename T::rng_state_type::int_type * rng_state,
                    bool use_shared_int,
-                   bool use_shared_real) {
+                   bool use_shared_real,
+                   size_t update_fn_idx) {
   using real_type = typename T::real_type;
   using rng_state_type = typename T::rng_state_type;
   using rng_int_type = typename rng_state_type::int_type;
@@ -102,10 +102,8 @@ void run_particles(size_t time_start,
   const auto data = nullptr;
   const bool data_is_shared = false;
 
-  update_gpu_ptr<T>* update_gpu_fns = get_update_gpu_fns<T>();
-  size_t num_update_gpu_fns = get_num_update_gpu_fns<T>();
-
-  //printf("number of update fns: %llu\n", num_update_gpu_fns);
+  const update_gpu_ptr<T>* update_gpu_fns = get_update_gpu_fns<T>();
+  const size_t num_update_gpu_fns = get_num_update_gpu_fns<T>();
 
 #ifdef __CUDA_ARCH__
   const int block_per_pars = (n_particles_each + blockDim.x - 1) / blockDim.x;
@@ -161,28 +159,23 @@ void run_particles(size_t time_start,
     interleaved<rng_int_type> p_rng(rng_state, i, n_particles);
 
     rng_state_type rng_block = get_rng_state<rng_state_type>(p_rng);
-    for (size_t time = time_start; time < time_end; ++time) {
-      for (size_t f = 0; f < num_update_gpu_fns; ++f) {
-        //printf("thread_id: %i time: %llu; executing update fn: %llu\n", i, time, f);
-        //update_gpu<T>(
-        update_gpu_fns[f](
-          time,
-          p_state,
-          p_internal_int,
-          p_internal_real,
-          shared_state.shared_int,
-          shared_state.shared_real,
-          rng_block,
-          p_state_next
-        );
-      }
 
-      SYNCWARP
+    update_gpu_fns[update_fn_idx](
+      time,
+      p_state,
+      p_internal_int,
+      p_internal_real,
+      shared_state.shared_int,
+      shared_state.shared_real,
+      rng_block,
+      p_state_next
+    );
 
-      interleaved<real_type> tmp = p_state;
-      p_state = p_state_next;
-      p_state_next = tmp;
-    }
+    // TODO(mjr) where should this go now? It was previously after each
+    // timestep (before swapping states) but here it's being called after every
+    // update function during every timestep.
+    SYNCWARP
+
     put_rng_state(rng_block, p_rng);
   }
 }
