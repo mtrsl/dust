@@ -21,13 +21,25 @@ namespace gpu {
                 //typename T::rng_state_type& rng_state,
                 //interleaved<typename T::real_type> state_next);
 
+// Get the number of update functions
 template <typename T>
 __host__ __device__
 size_t get_num_update_gpu_fns();
 
+// Get the array of update function pointers
 template <typename T>
 __device__
 update_gpu_ptr<T>* get_update_gpu_fns();
+
+// Get the number of update function dependencies
+template <typename T>
+size_t get_num_update_gpu_dependencies();
+
+// Get the array of update function dependencies in the form {{i, j}, ...},
+// meaning that fn j depends on fn i, where the indices are into the fn ptr
+// array above
+template <typename T>
+size_t (*get_update_gpu_dependencies())[2];
 
 template <typename T>
 __device__
@@ -88,7 +100,8 @@ void run_particles(size_t time,
                    typename T::real_type * state_next,
                    int * internal_int,
                    typename T::real_type * internal_real,
-                   size_t n_shared_int, size_t n_shared_real,
+                   size_t n_shared_int,
+                   size_t n_shared_real,
                    const int * shared_int,
                    const typename T::real_type * shared_real,
                    typename T::rng_state_type::int_type * rng_state,
@@ -103,7 +116,6 @@ void run_particles(size_t time,
   const bool data_is_shared = false;
 
   const update_gpu_ptr<T>* update_gpu_fns = get_update_gpu_fns<T>();
-  const size_t num_update_gpu_fns = get_num_update_gpu_fns<T>();
 
 #ifdef __CUDA_ARCH__
   const int block_per_pars = (n_particles_each + blockDim.x - 1) / blockDim.x;
@@ -138,6 +150,8 @@ void run_particles(size_t time,
 
   if (i < max_i) {
 #else
+    dust::utils::fatal_error("(mjr) `dust::gpu::run_particles()`: `__CUDA_ARCH__` not defined - bailing");
+
   // omp here
   for (size_t i = 0; i < n_particles; ++i) {
     const int j = i / n_particles_each;
@@ -159,6 +173,8 @@ void run_particles(size_t time,
     interleaved<rng_int_type> p_rng(rng_state, i, n_particles);
 
     rng_state_type rng_block = get_rng_state<rng_state_type>(p_rng);
+
+    printf("time: %llu; thread_id: %i; executing update fn: %llu\n", time, i, update_fn_idx);
 
     update_gpu_fns[update_fn_idx](
       time,

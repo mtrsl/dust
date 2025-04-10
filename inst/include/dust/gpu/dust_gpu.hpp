@@ -27,6 +27,12 @@
 
 namespace dust {
 
+// TODO this is a hack!
+// Manually write out some indices so we can take their addresses - can't
+// have a ptr to a literal. What's a better solution? Can't pass device
+// fn ptrs as kernel args.
+const size_t static_fn_ids[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+
 template <typename T>
 class dust_gpu {
 public:
@@ -227,63 +233,154 @@ public:
   void run(const size_t time_end) {
     if (time_end > time_) {
       const size_t time_start = time_;
-#ifdef __NVCC__
+
+      // Declare time outside the timestepping loop so we can set it
+      // dynamically (via a ptr) each time the kernel is launched
+      size_t time = time_start;
+
+      // Get the number of update fns
       const size_t n_update_fns = dust::gpu::get_num_update_gpu_fns<T>();
 
-      for (size_t time = time_start; time < time_end; ++time) {
-        for (size_t update_fn_idx = 0; update_fn_idx < n_update_fns; update_fn_idx += 1) {
-          dust::gpu::run_particles<T><<<cuda_pars_.run.block_count,
-                                        cuda_pars_.run.block_size,
-                                        cuda_pars_.run.shared_size_bytes,
-                                        kernel_stream_.stream()>>>(
-                          time,
-                          n_particles_total_,
-                          n_pars_effective(),
-                          device_state_.y.data(),
-                          device_state_.y_next.data(),
-                          device_state_.internal_int.data(),
-                          device_state_.internal_real.data(),
-                          device_state_.n_shared_int,
-                          device_state_.n_shared_real,
-                          device_state_.shared_int.data(),
-                          device_state_.shared_real.data(),
-                          device_state_.rng.data(),
-                          cuda_pars_.run.shared_int,
-                          cuda_pars_.run.shared_real,
-                          update_fn_idx);
+      // Get the number of update deps and the actual array of deps
+      const size_t n_update_deps = dust::gpu::get_num_update_gpu_dependencies<T>();
+      const size_t (*update_deps)[2] = dust::gpu::get_update_gpu_dependencies<T>();
 
-          kernel_stream_.sync();
+      // Storage for the CUDA graph and its nodes
+      cudaGraph_t graph;
+      cudaGraphExec_t instance;
+      std::vector<cudaGraphNode_t> nodes(n_update_fns);
+      std::cout << "`nodes` has " << nodes.size() << " elements\n";
+
+      // Create an empty CUDA graph
+      // TODO what is 0 here?
+      CUDA_CALL(cudaGraphCreate(&graph, 0));
+
+      const size_t n_pars_effective_local = n_pars_effective();
+      const real_type *y_local = device_state_.y.data();
+      const real_type *y_next_local = device_state_.y_next.data();
+      const int *internal_int_local = device_state_.internal_int.data();
+      const real_type *internal_real_local = device_state_.internal_real.data();
+      const int *shared_int_local = device_state_.shared_int.data();
+      const real_type *shared_real_local = device_state_.shared_real.data();
+      const rng_int_type *rng_local = device_state_.rng.data();
+
+      // Create nodes with the appropriate params (copied from the original
+      // kernel launch params etc) and add them to the graph
+      for (size_t f = 0; f < n_update_fns; ++f) {
+        void *f_id = (void *) &static_fn_ids[f];
+
+        // Set the kernel arguments. The last argument is the index of the
+        // update function
+        void *kernel_args[] = {
+          (void *) &time,
+          (void *) &n_particles_total_,
+          (void *) &n_pars_effective_local,
+          (void *) &y_local,
+          (void *) &y_next_local,
+          (void *) &internal_int_local,
+          (void *) &internal_real_local,
+          (void *) &device_state_.n_shared_int,
+          (void *) &device_state_.n_shared_real,
+          (void *) &shared_int_local,
+          (void *) &shared_real_local,
+          (void *) &rng_local,
+          (void *) &cuda_pars_.run.shared_int,
+          (void *) &cuda_pars_.run.shared_real,
+          (void *) &static_fn_ids[f]
+        };
+
+        cudaKernelNodeParams params = {
+          .func = (void*) dust::gpu::run_particles<T>,
+          .gridDim = cuda_pars_.run.block_count,
+          .blockDim = cuda_pars_.run.block_size,
+          .sharedMemBytes = cuda_pars_.run.shared_size_bytes,
+          .kernelParams = kernel_args,
+          .extra = nullptr
+        };
+
+        //printf("time = %f; f = %llu\n", time, f);
+        std::cout << "time = " << time << "; f = " << f << '\n';
+
+        CUDA_CALL(cudaGraphAddKernelNode(&nodes[f], graph, nullptr, 0, &params));
+      }
+
+      // Add node dependencies
+      for (size_t dep = 0; dep < n_update_deps; ++dep) {
+        CUDA_CALL(
+          cudaGraphAddDependencies(
+            graph,
+            &nodes[update_deps[dep][0]],
+            &nodes[update_deps[dep][1]],
+            1
+          )
+        );
+      }
+
+      // Instantiate the graph (the graph itself doesn't change, only arguments do)
+      CUDA_CALL(cudaGraphInstantiate(&instance, graph, 0));
+
+      for (time = time_start; time < time_end; ++time) {
+        // Update the kernel params (so it picks up the current time)
+        const size_t n_pars_effective_local = n_pars_effective();
+        const real_type *y_local = device_state_.y.data();
+        const real_type *y_next_local = device_state_.y_next.data();
+        const int *internal_int_local = device_state_.internal_int.data();
+        const real_type *internal_real_local = device_state_.internal_real.data();
+        const int *shared_int_local = device_state_.shared_int.data();
+        const real_type *shared_real_local = device_state_.shared_real.data();
+        const rng_int_type *rng_local = device_state_.rng.data();
+
+        for (size_t f = 0; f < n_update_fns; ++f) {
+          // What else might need to be updated between timesteps? This seems
+          // to be enough to get the expected behaviour from gsir example.
+          // After realising that y and y_next need to be updated, I was
+          // surprised that it seems to work without updating
+          // internal_{int,real}. Also the RNG, but I've only been testing a
+          // deterministic model so far. I guess the "linear" version of this
+          // actually passes everything into the kernel every timestep, so
+          // maybe just do that here? Is there much/any overhead to changing
+          // which values get copied to when launching the graph? I think a
+          // value for every argument will be copied over anyway...
+          void *kernel_args[] = {
+            (void *) &time,
+            (void *) &n_particles_total_,
+            (void *) &n_pars_effective_local,
+            (void *) &y_local,
+            (void *) &y_next_local,
+            (void *) &internal_int_local,
+            (void *) &internal_real_local,
+            (void *) &device_state_.n_shared_int,
+            (void *) &device_state_.n_shared_real,
+            (void *) &shared_int_local,
+            (void *) &shared_real_local,
+            (void *) &rng_local,
+            (void *) &cuda_pars_.run.shared_int,
+            (void *) &cuda_pars_.run.shared_real,
+            (void *) &static_fn_ids[f]
+          };
+
+          cudaKernelNodeParams params = {
+            .func = (void*) dust::gpu::run_particles<T>,
+            .gridDim = cuda_pars_.run.block_count,
+            .blockDim = cuda_pars_.run.block_size,
+            .sharedMemBytes = cuda_pars_.run.shared_size_bytes,
+            .kernelParams = kernel_args,
+            .extra = nullptr
+          };
+
+          CUDA_CALL(cudaGraphExecKernelNodeSetParams(instance, nodes[f], &params));
         }
 
-        // Swap the y and y_next pointers after each timestep. Previously, each
-        // gpu thread had its own view of which pointer was which. Timestepping
-        // was in the kernel and the pointers were being swapped after each
-        // timestep, but each gpu thread (~particle:param combo?) could
-        // independently timestep, only writing data to the parts of state that
-        // it was meant to. Now we step all the particles together, so swapping
-        // pointers outside the kernel makes most sense.
+        CUDA_CALL(cudaGraphLaunch(instance, kernel_stream_.stream()));
+        kernel_stream_.sync();
         device_state_.swap();
       }
-#else
-      const bool use_shared_int = false;
-      const bool use_shared_real = false;
-      dust::gpu::run_particles<T>(time_start, time_end, n_particles_total_,
-                      n_pars_effective(),
-                      device_state_.y.data(),
-                      device_state_.y_next.data(),
-                      device_state_.internal_int.data(),
-                      device_state_.internal_real.data(),
-                      device_state_.n_shared_int,
-                      device_state_.n_shared_real,
-                      device_state_.shared_int.data(),
-                      device_state_.shared_real.data(),
-                      device_state_.rng.data(),
-                      use_shared_int,
-                      use_shared_real);
-#endif
 
       select_needed_ = true;
       time_ = time_end;
+
+      CUDA_CALL(cudaGraphExecDestroy(instance));
+      CUDA_CALL(cudaGraphDestroy(graph));
     }
   }
 
