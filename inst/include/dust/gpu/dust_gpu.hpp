@@ -27,12 +27,6 @@
 
 namespace dust {
 
-// TODO this is a hack!
-// Manually write out some indices so we can take their addresses - can't
-// have a ptr to a literal. What's a better solution? Can't pass device
-// fn ptrs as kernel args.
-const size_t static_fn_ids[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-
 template <typename T>
 class dust_gpu {
 public:
@@ -241,6 +235,15 @@ public:
       // Get the number of update fns
       const size_t n_update_fns = dust::gpu::get_num_update_gpu_fns<T>();
 
+      // Dynamically allocate a vector of indices from 0 to n_fns - 1. These need
+      // to live long enough so that the graph api can copy the values via
+      // pointers to these indices - temporaries aren't enough
+      // TODO(mjr) move this to member data
+      std::vector<size_t> fn_ids(n_fns);
+      for (size_t f = 0; f < n_fns; f += 1) {
+        fn_ids[f] = f;
+      }
+
       // Get the number of update deps and the actual array of deps
       const size_t n_update_deps = dust::gpu::get_num_update_gpu_dependencies<T>();
       const size_t (*update_deps)[2] = dust::gpu::get_update_gpu_dependencies<T>();
@@ -252,7 +255,6 @@ public:
       std::cout << "`nodes` has " << nodes.size() << " elements\n";
 
       // Create an empty CUDA graph
-      // TODO what is 0 here?
       CUDA_CALL(cudaGraphCreate(&graph, 0));
 
       const size_t n_pars_effective_local = n_pars_effective();
@@ -267,10 +269,13 @@ public:
       // Create nodes with the appropriate params (copied from the original
       // kernel launch params etc) and add them to the graph
       for (size_t f = 0; f < n_update_fns; ++f) {
-        void *f_id = (void *) &static_fn_ids[f];
+        void *f_id = (void *) &fn_ids[f];
 
         // Set the kernel arguments. The last argument is the index of the
         // update function
+        // TODO(mjr) make a struct for most of the kernel arguments and then
+        // just pass a ptr to the struct - also see
+        // https://github.com/mrc-ide/dust/issues/319
         void *kernel_args[] = {
           (void *) &time,
           (void *) &n_particles_total_,
@@ -286,7 +291,7 @@ public:
           (void *) &rng_local,
           (void *) &cuda_pars_.run.shared_int,
           (void *) &cuda_pars_.run.shared_real,
-          (void *) &static_fn_ids[f]
+          (void *) &fn_ids[f]
         };
 
         cudaKernelNodeParams params = {
@@ -356,7 +361,7 @@ public:
             (void *) &rng_local,
             (void *) &cuda_pars_.run.shared_int,
             (void *) &cuda_pars_.run.shared_real,
-            (void *) &static_fn_ids[f]
+            (void *) &fn_ids[f]
           };
 
           cudaKernelNodeParams params = {
