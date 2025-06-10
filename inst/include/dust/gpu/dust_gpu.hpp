@@ -235,12 +235,12 @@ public:
       // Get the number of update fns
       const size_t n_update_fns = dust::gpu::get_num_update_gpu_fns<T>();
 
-      // Dynamically allocate a vector of indices from 0 to n_fns - 1. These need
-      // to live long enough so that the graph api can copy the values via
-      // pointers to these indices - temporaries aren't enough
+      // Dynamically allocate a vector of indices from 0 to n_update_fns - 1.
+      // These need to live long enough so that the graph api can copy the
+      // values via pointers to these indices - temporaries aren't enough
       // TODO(mjr) move this to member data
-      std::vector<size_t> fn_ids(n_fns);
-      for (size_t f = 0; f < n_fns; f += 1) {
+      std::vector<size_t> fn_ids(n_update_fns);
+      for (size_t f = 0; f < n_update_fns; f += 1) {
         fn_ids[f] = f;
       }
 
