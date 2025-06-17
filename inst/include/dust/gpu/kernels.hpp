@@ -174,7 +174,7 @@ void run_particles(size_t time,
 
     rng_state_type rng_block = get_rng_state<rng_state_type>(p_rng);
 
-    printf("time: %llu; thread_id: %i; executing update fn: %llu\n", time, i, update_fn_idx);
+    //printf("time: %llu; thread_id: %i; executing update fn: %llu\n", time, i, update_fn_idx);
 
     update_gpu_fns[update_fn_idx](
       time,
