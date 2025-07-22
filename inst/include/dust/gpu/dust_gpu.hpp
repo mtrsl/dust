@@ -340,37 +340,37 @@ public:
 
       for (time = time_start; time < time_end; time += 1) {
         // Update the kernel arguments
-        const size_t n_pars_effective_local = n_pars_effective();
-        const real_type *y_local = device_state_.y.data();
-        const real_type *y_next_local = device_state_.y_next.data();
-        const int *internal_int_local = device_state_.internal_int.data();
-        const real_type *internal_real_local = device_state_.internal_real.data();
-        const int *shared_int_local = device_state_.shared_int.data();
-        const real_type *shared_real_local = device_state_.shared_real.data();
-        const rng_int_type *rng_local = device_state_.rng.data();
+        //const size_t n_pars_effective_local = n_pars_effective();
+        //const real_type *y_local = device_state_.y.data();
+        //const real_type *y_next_local = device_state_.y_next.data();
+        //const int *internal_int_local = device_state_.internal_int.data();
+        //const real_type *internal_real_local = device_state_.internal_real.data();
+        //const int *shared_int_local = device_state_.shared_int.data();
+        //const real_type *shared_real_local = device_state_.shared_real.data();
+        //const rng_int_type *rng_local = device_state_.rng.data();
 
-        for (size_t f = 0; f < n_update_fns; ++f) {
-          // TODO which of these ptrs actually need updating every timestep?
-          // Seem to work with just y_local and y_next_local
+        //for (size_t f = 0; f < n_update_fns; ++f) {
+          //// TODO which of these ptrs actually need updating every timestep?
+          //// Seem to work with just y_local and y_next_local
 
-          //kernel_args[f][0] = (void *) &time;
-          //kernel_args[f][1] = (void *) &n_particles_total_;
-          //kernel_args[f][2] = (void *) &n_pars_effective_local;
-          kernel_args[f][3] = (void *) &y_local;
-          kernel_args[f][4] = (void *) &y_next_local;
-          //kernel_args[f][5] = (void *) &internal_int_local;
-          //kernel_args[f][6] = (void *) &internal_real_local;
-          //kernel_args[f][7] = (void *) &device_state_.n_shared_int;
-          //kernel_args[f][8] = (void *) &device_state_.n_shared_real;
-          //kernel_args[f][9] = (void *) &shared_int_local;
-          //kernel_args[f][10] = (void *) &shared_real_local;
-          //kernel_args[f][11] = (void *) &rng_local;
-          //kernel_args[f][12] = (void *) &cuda_pars_.run.shared_int;
-          //kernel_args[f][13] = (void *) &cuda_pars_.run.shared_real;
-          //kernel_args[f][14] = (void *) &fn_ids[f];
+          ////kernel_args[f][0] = (void *) &time;
+          ////kernel_args[f][1] = (void *) &n_particles_total_;
+          ////kernel_args[f][2] = (void *) &n_pars_effective_local;
+          //kernel_args[f][3] = (void *) &y_local;
+          //kernel_args[f][4] = (void *) &y_next_local;
+          ////kernel_args[f][5] = (void *) &internal_int_local;
+          ////kernel_args[f][6] = (void *) &internal_real_local;
+          ////kernel_args[f][7] = (void *) &device_state_.n_shared_int;
+          ////kernel_args[f][8] = (void *) &device_state_.n_shared_real;
+          ////kernel_args[f][9] = (void *) &shared_int_local;
+          ////kernel_args[f][10] = (void *) &shared_real_local;
+          ////kernel_args[f][11] = (void *) &rng_local;
+          ////kernel_args[f][12] = (void *) &cuda_pars_.run.shared_int;
+          ////kernel_args[f][13] = (void *) &cuda_pars_.run.shared_real;
+          ////kernel_args[f][14] = (void *) &fn_ids[f];
 
-          CUDA_CALL(cudaGraphExecKernelNodeSetParams(graph_exec, nodes[f], &kernel_node_params[f]));
-        }
+          //CUDA_CALL(cudaGraphExecKernelNodeSetParams(graph_exec, nodes[f], &kernel_node_params[f]));
+        //}
 
         // Launch the graph
         CUDA_CALL(cudaGraphLaunch(graph_exec, kernel_stream_.stream()));
@@ -380,6 +380,14 @@ public:
 
         // Swap the device state pointers
         device_state_.swap();
+
+        // Increment the timestep counter
+        // TODO add this kernel to the graph
+        dust::gpu::increment_timestep_count<<<1, 1>>>();
+
+        // Synchronise again after incrementing timestep counter
+        // TODO remove once we add the timestep kernels to the graph
+        CUDA_CALL(cudaDeviceSynchronize());
       }
 
       select_needed_ = true;

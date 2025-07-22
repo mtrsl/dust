@@ -91,6 +91,28 @@ void scatter_device(const size_t* index,
   }
 }
 
+// Counter for the number of timesteps run. Used for effective swapping of
+// y/y_next in kernel code without actually swapping them. Also differs from
+// `time_` in that it always starts at zero regardless of actual initial time
+__device__
+size_t timestep_count;
+
+__global__
+void initialise_timestep_count() {
+  // Set on one thread only
+  if (threadIdx.x == 0 && blockIdx.x == 0) {
+    timestep_count = 0;
+  }
+}
+
+__global__
+void increment_timestep_count() {
+  // Increment on one thread only
+  if (threadIdx.x == 0 && blockIdx.x == 0) {
+    timestep_count += 1;
+  }
+}
+
 template <typename T>
 __global__
 void run_particles(size_t time,
@@ -166,6 +188,18 @@ void run_particles(size_t time,
                            use_shared_real,  // ignored
                            data_is_shared);  // false
 #endif
+    // Swap our local copies of the state/state_next pointers every other
+    // timestep
+    //printf("In kernel: timestep_count = %llu\n", timestep_count);
+
+    //printf("Remainder: %llu\n", timestep_count % 2);
+
+    if (timestep_count % 2 == 1) {
+      typename T::real_type * tmp = state;
+      state = state_next;
+      state_next = tmp;
+    }
+
     interleaved<real_type> p_state(state, i, n_particles);
     interleaved<real_type> p_state_next(state_next, i, n_particles);
     interleaved<int> p_internal_int(internal_int, i, n_particles);
