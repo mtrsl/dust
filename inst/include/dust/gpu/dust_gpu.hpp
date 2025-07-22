@@ -353,9 +353,6 @@ public:
         // Synchronise the kernel stream
         kernel_stream_.sync();
 
-        // Swap the device state pointers
-        device_state_.swap();
-
         // Increment the timestep counter
         // TODO add this kernel to the graph
         dust::gpu::increment_timestep_count<<<1, 1>>>();
@@ -363,6 +360,12 @@ public:
         // Synchronise again after incrementing timestep counter
         // TODO remove once we add the timestep kernels to the graph
         CUDA_CALL(cudaDeviceSynchronize());
+      }
+
+      // Swap the device state pointers if we've done an odd number of
+      // timesteps in this go
+      if ((time_end - time_start) % 2 == 1) {
+        device_state_.swap();
       }
 
       select_needed_ = true;
