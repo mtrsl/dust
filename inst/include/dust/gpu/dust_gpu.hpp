@@ -225,6 +225,7 @@ public:
   }
 
   void run(const size_t time_end) {
+#ifdef __NVCC__
     if (time_end > time_) {
       const size_t time_start = time_;
 
@@ -255,12 +256,12 @@ public:
 
       // Storage for the kernel args
       // TODO(mjr) change the hardcoded number of args here when needed. Maybe
-      // better (definitely safter) to just use `.push_back()` or
+      // better (definitely safer) to just use `.push_back()` or
       // `.emplace_back()`
       std::vector<std::vector<void *>> kernel_args(n_update_fns, std::vector<void *>(15, nullptr));
       std::vector<cudaKernelNodeParams> kernel_node_params(n_update_fns);
 
-      std::cout << "`nodes` has " << nodes.size() << " elements\n";
+      //std::cout << "`nodes` has " << nodes.size() << " elements\n";
 
       const size_t n_pars_effective_local = n_pars_effective();
       const real_type *y_local = device_state_.y.data();
@@ -333,7 +334,7 @@ public:
       //CUDA_CALL(cudaGraphDebugDotPrint(graph, "graph.dot", 0));
 
       // Declare and create an executable instance of the graph
-      std::cout << "Instantiating executable graph\n";
+      //std::cout << "Instantiating executable graph\n";
       cudaGraphExec_t graph_exec;
       CUDA_CALL(cudaGraphInstantiate(&graph_exec, graph, 0));
 
@@ -388,6 +389,9 @@ public:
       CUDA_CALL(cudaGraphExecDestroy(graph_exec));
       CUDA_CALL(cudaGraphDestroy(graph));
     }
+#else
+    printf("CUDA not enabled!\n");
+#endif
   }
 
   std::vector<real_type> simulate(const std::vector<size_t>& time_end) {
