@@ -229,6 +229,14 @@ public:
     if (time_end > time_) {
       const size_t time_start = time_;
 
+      // Initialise the timestep counter to zero
+      // TODO(mjr) add this kernel to the graph
+      dust::gpu::initialise_timestep_count<<<1, 1>>>();
+
+      // Synchronise again after incrementing timestep counter
+      // TODO(mjr) remove once we add the timestep kernels to the graph
+      CUDA_CALL(cudaDeviceSynchronize());
+
       // TODO(mjr) move most of the graph stuff to member data so it can be
       // reused across multiple calls to `run`
 
