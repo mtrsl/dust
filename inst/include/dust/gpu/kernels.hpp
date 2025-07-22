@@ -188,6 +188,12 @@ void run_particles(size_t time,
                            use_shared_real,  // ignored
                            data_is_shared);  // false
 #endif
+    interleaved<real_type> p_state(state, i, n_particles);
+    interleaved<real_type> p_state_next(state_next, i, n_particles);
+    interleaved<int> p_internal_int(internal_int, i, n_particles);
+    interleaved<real_type> p_internal_real(internal_real, i, n_particles);
+    interleaved<rng_int_type> p_rng(rng_state, i, n_particles);
+
     // Swap our local copies of the state/state_next pointers every other
     // timestep
     //printf("In kernel: timestep_count = %llu\n", timestep_count);
@@ -195,16 +201,10 @@ void run_particles(size_t time,
     //printf("Remainder: %llu\n", timestep_count % 2);
 
     if (timestep_count % 2 == 1) {
-      typename T::real_type * tmp = state;
-      state = state_next;
-      state_next = tmp;
+      interleaved<real_type> tmp = p_state;
+      p_state = p_state_next;
+      p_state_next = tmp;
     }
-
-    interleaved<real_type> p_state(state, i, n_particles);
-    interleaved<real_type> p_state_next(state_next, i, n_particles);
-    interleaved<int> p_internal_int(internal_int, i, n_particles);
-    interleaved<real_type> p_internal_real(internal_real, i, n_particles);
-    interleaved<rng_int_type> p_rng(rng_state, i, n_particles);
 
     rng_state_type rng_block = get_rng_state<rng_state_type>(p_rng);
 
