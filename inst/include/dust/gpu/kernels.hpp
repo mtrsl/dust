@@ -91,31 +91,10 @@ void scatter_device(const size_t* index,
   }
 }
 
-// Counter for the number of timesteps run. Used for effective swapping of
-// y/y_next in kernel code without actually swapping them. Also differs from
-// `time_` in that it always starts at zero regardless of actual initial time
-__device__
-size_t timestep_count;
-
-__global__
-void initialise_timestep_count() {
-  // Set on one thread only
-  if (threadIdx.x == 0 && blockIdx.x == 0) {
-    timestep_count = 0;
-  }
-}
-
-__global__
-void increment_timestep_count() {
-  // Increment on one thread only
-  if (threadIdx.x == 0 && blockIdx.x == 0) {
-    timestep_count += 1;
-  }
-}
-
 template <typename T>
 __global__
-void run_particles(size_t time,
+void run_particles(size_t *timestep_count,
+                   size_t *d_time,
                    size_t n_particles,
                    size_t n_pars,
                    typename T::real_type * state,
@@ -196,11 +175,11 @@ void run_particles(size_t time,
 
     // Swap our local copies of the state/state_next pointers every other
     // timestep
-    //printf("In kernel: timestep_count = %llu\n", timestep_count);
+    //printf("In kernel: timestep_count = %llu\n", *timestep_count);
 
     //printf("Remainder: %llu\n", timestep_count % 2);
 
-    if (timestep_count % 2 == 1) {
+    if (*timestep_count % 2 == 1) {
       interleaved<real_type> tmp = p_state;
       p_state = p_state_next;
       p_state_next = tmp;
@@ -211,7 +190,7 @@ void run_particles(size_t time,
     //printf("time: %llu; thread_id: %i; executing update fn: %llu\n", time, i, update_fn_idx);
 
     update_gpu_fns[update_fn_idx](
-      time,
+      *d_time,
       p_state,
       p_internal_int,
       p_internal_real,

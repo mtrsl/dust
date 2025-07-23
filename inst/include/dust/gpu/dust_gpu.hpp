@@ -229,13 +229,18 @@ public:
     if (time_end > time_) {
       const size_t time_start = time_;
 
-      // Initialise the timestep counter to zero
-      // TODO(mjr) add this kernel to the graph
-      dust::gpu::initialise_timestep_count<<<1, 1>>>();
+      // Counter for the number of timesteps run. Used for effective swapping of
+      // y/y_next in kernel code without actually swapping them. Also differs from
+      // `time_` in that it always starts at zero regardless of actual initial time
+      size_t *d_timestep_count;
 
-      // Synchronise again after incrementing timestep counter
-      // TODO(mjr) remove once we add the timestep kernels to the graph
-      CUDA_CALL(cudaDeviceSynchronize());
+      // Device copy of the time
+      size_t *d_time;
+
+      // Allocated the device time variables. Don't bother with initialising
+      // values as they will be written before they're used anyway
+      CUDA_CALL(cudaMalloc(&d_timestep_count, sizeof(size_t)));
+      CUDA_CALL(cudaMalloc(&d_time, sizeof(size_t)));
 
       // TODO(mjr) move most of the graph stuff to member data so it can be
       // reused across multiple calls to `run`
@@ -266,7 +271,7 @@ public:
       // TODO(mjr) change the hardcoded number of args here when needed. Maybe
       // better (definitely safer) to just use `.push_back()` or
       // `.emplace_back()`
-      std::vector<std::vector<void *>> kernel_args(n_update_fns, std::vector<void *>(15, nullptr));
+      std::vector<std::vector<void *>> kernel_args(n_update_fns, std::vector<void *>(16, nullptr));
       std::vector<cudaKernelNodeParams> kernel_node_params(n_update_fns);
 
       //std::cout << "`nodes` has " << nodes.size() << " elements\n";
@@ -288,21 +293,22 @@ public:
         // TODO(mjr) make a struct for most of the kernel arguments and then
         // just pass a ptr to the struct? Also see
         // https://github.com/mrc-ide/dust/issues/319
-        kernel_args[f][0] = (void *) &time;
-        kernel_args[f][1] = (void *) &n_particles_total_;
-        kernel_args[f][2] = (void *) &n_pars_effective_local;
-        kernel_args[f][3] = (void *) &y_local;
-        kernel_args[f][4] = (void *) &y_next_local;
-        kernel_args[f][5] = (void *) &internal_int_local;
-        kernel_args[f][6] = (void *) &internal_real_local;
-        kernel_args[f][7] = (void *) &device_state_.n_shared_int;
-        kernel_args[f][8] = (void *) &device_state_.n_shared_real;
-        kernel_args[f][9] = (void *) &shared_int_local;
-        kernel_args[f][10] = (void *) &shared_real_local;
-        kernel_args[f][11] = (void *) &rng_local;
-        kernel_args[f][12] = (void *) &cuda_pars_.run.shared_int;
-        kernel_args[f][13] = (void *) &cuda_pars_.run.shared_real;
-        kernel_args[f][14] = (void *) &fn_ids[f];
+        kernel_args[f][0] = (void *) &d_timestep_count;
+        kernel_args[f][1] = (void *) &d_time;
+        kernel_args[f][2] = (void *) &n_particles_total_;
+        kernel_args[f][3] = (void *) &n_pars_effective_local;
+        kernel_args[f][4] = (void *) &y_local;
+        kernel_args[f][5] = (void *) &y_next_local;
+        kernel_args[f][6] = (void *) &internal_int_local;
+        kernel_args[f][7] = (void *) &internal_real_local;
+        kernel_args[f][8] = (void *) &device_state_.n_shared_int;
+        kernel_args[f][9] = (void *) &device_state_.n_shared_real;
+        kernel_args[f][10] = (void *) &shared_int_local;
+        kernel_args[f][11] = (void *) &shared_real_local;
+        kernel_args[f][12] = (void *) &rng_local;
+        kernel_args[f][13] = (void *) &cuda_pars_.run.shared_int;
+        kernel_args[f][14] = (void *) &cuda_pars_.run.shared_real;
+        kernel_args[f][15] = (void *) &fn_ids[f];
 
         kernel_node_params[f] = {
           .func = (void*) dust::gpu::run_particles<T>,
@@ -346,20 +352,22 @@ public:
       cudaGraphExec_t graph_exec;
       CUDA_CALL(cudaGraphInstantiate(&graph_exec, graph, 0));
 
+      size_t timestep_count = 0;
+
       for (time = time_start; time < time_end; time += 1) {
+        // Set the device copy of the time
+        CUDA_CALL(cudaMemcpyAsync(d_time, &time, sizeof(size_t), cudaMemcpyHostToDevice, kernel_stream_.stream()));
+
         // Launch the graph
         CUDA_CALL(cudaGraphLaunch(graph_exec, kernel_stream_.stream()));
 
+        // Increment the timestep counter and copy to device
+        timestep_count += 1;
+
+        CUDA_CALL(cudaMemcpyAsync(d_timestep_count, &timestep_count, sizeof(size_t), cudaMemcpyHostToDevice, kernel_stream_.stream()));
+
         // Synchronise the kernel stream
         kernel_stream_.sync();
-
-        // Increment the timestep counter
-        // TODO add this kernel to the graph
-        dust::gpu::increment_timestep_count<<<1, 1>>>();
-
-        // Synchronise again after incrementing timestep counter
-        // TODO remove once we add the timestep kernels to the graph
-        CUDA_CALL(cudaDeviceSynchronize());
       }
 
       // Swap the device state pointers if we've done an odd number of
@@ -370,6 +378,11 @@ public:
 
       select_needed_ = true;
       time_ = time_end;
+
+      // TODO(mjr) probably a stupid place to put this
+      // Should we make a destructor for `dust_gpu` so we can free stuff there?
+      CUDA_CALL(cudaFree(d_timestep_count));
+      CUDA_CALL(cudaFree(d_time));
 
       // Destroy graph objects
       CUDA_CALL(cudaGraphExecDestroy(graph_exec));
