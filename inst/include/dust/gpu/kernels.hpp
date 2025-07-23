@@ -93,7 +93,7 @@ void scatter_device(const size_t* index,
 
 template <typename T>
 __global__
-void run_particles(size_t *timestep_count,
+void run_particles(size_t time_start,
                    size_t *d_time,
                    size_t n_particles,
                    size_t n_pars,
@@ -175,11 +175,12 @@ void run_particles(size_t *timestep_count,
 
     // Swap our local copies of the state/state_next pointers every other
     // timestep
-    //printf("In kernel: timestep_count = %llu\n", *timestep_count);
+    size_t timestep_count = *d_time - time_start;
 
+    //printf("In kernel: timestep_count = %llu\n", timestep_count);
     //printf("Remainder: %llu\n", timestep_count % 2);
 
-    if (*timestep_count % 2 == 1) {
+    if (timestep_count % 2 == 1) {
       interleaved<real_type> tmp = p_state;
       p_state = p_state_next;
       p_state_next = tmp;
