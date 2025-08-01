@@ -304,7 +304,8 @@ template <typename real_type, typename rng_state_type>
 struct device_state {
   void initialise(size_t n_particles_, size_t n_state, size_t n_pars_,
                   size_t n_internal_int, size_t n_internal_real,
-                  size_t n_shared_int_, size_t n_shared_real_) {
+                  size_t n_shared_int_, size_t n_shared_real_,
+                  size_t n_update_fns) {
     n_particles = n_particles_;
     // NOTE: this is never read
     n_pars = n_pars_;
@@ -317,7 +318,7 @@ struct device_state {
     internal_real = device_array<real_type>(n_internal_real * n_particles);
     shared_int = device_array<int>(n_shared_int * n_pars);
     shared_real = device_array<real_type>(n_shared_real * n_pars);
-    rng = device_array<typename rng_state_type::int_type>(n_rng * n_particles);
+    rng = device_array<typename rng_state_type::int_type>(n_rng * n_particles * n_update_fns);
     index = device_array<char>(n_state * n_particles);
     n_selected = device_array<int>(1);
     scatter_index = device_array<size_t>(n_particles);

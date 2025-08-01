@@ -171,7 +171,7 @@ void run_particles(size_t time_start,
     interleaved<real_type> p_state_next(state_next, i, n_particles);
     interleaved<int> p_internal_int(internal_int, i, n_particles);
     interleaved<real_type> p_internal_real(internal_real, i, n_particles);
-    interleaved<rng_int_type> p_rng(rng_state, i, n_particles);
+    interleaved<rng_int_type> p_rng(rng_state, i + update_fn_idx * n_particles * rng_state_type::size(), n_particles);
 
     // Swap our local copies of the state/state_next pointers every other
     // timestep

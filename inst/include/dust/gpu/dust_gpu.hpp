@@ -532,25 +532,28 @@ public:
   std::vector<rng_int_type> rng_state() {
     const size_t np = n_particles();
     constexpr size_t rng_len = rng_state_type::size();
+    const size_t n_update_fns = dust::gpu::get_num_update_gpu_fns<model_type>();
 
-    std::vector<rng_int_type> rng_interleaved(np * rng_len);
+    std::vector<rng_int_type> rng_interleaved(np * rng_len * n_update_fns);
     // Pull from device
     device_state_.rng.get_array(rng_interleaved);
 
     // De-interleaved RNG state, copied from rng_interleaved, +1 is host rng
-    std::vector<rng_int_type> rng_state((np + 1) * rng_len);
+    std::vector<rng_int_type> rng_state((np * n_update_fns + 1) * rng_len);
 #ifdef _OPENMP
     #pragma omp parallel for schedule(static) num_threads(n_threads_)
 #endif
-    for (size_t i = 0; i < np; ++i) {
-      for (size_t j = 0; j < rng_len; ++j) {
-        rng_state[j + i * rng_len] = rng_interleaved[i + j * np];
+    for (size_t f = 0; f < n_update_fns; ++f) {
+      for (size_t i = 0; i < np; ++i) {
+        for (size_t j = 0; j < rng_len; ++j) {
+          rng_state[j + i * rng_len + f * rng_len * np] = rng_interleaved[i + j * np + f * rng_len * np];
+        }
       }
     }
 
     // Add the (host) resample state on the end
     for (size_t j = 0; j < rng_len; ++j) {
-      rng_state[np * rng_len + j] = resample_rng_[j];
+      rng_state[np * rng_len * n_update_fns + j] = resample_rng_[j];
     }
 
     return rng_state;
@@ -559,15 +562,18 @@ public:
   void set_rng_state(const std::vector<rng_int_type>& rng_state) {
     const size_t np = n_particles();
     constexpr size_t rng_len = rng_state_type::size();
+    const size_t n_update_fns = dust::gpu::get_num_update_gpu_fns<model_type>();
 
     // Interleaved RNG state copied from rng_state
-    std::vector<rng_int_type> rng_interleaved(np * rng_len);
+    std::vector<rng_int_type> rng_interleaved(np * rng_len * n_update_fns);
 #ifdef _OPENMP
       #pragma omp parallel for schedule(static) num_threads(n_threads_)
 #endif
-    for (size_t i = 0; i < np; ++i) {
-      for (size_t j = 0; j < rng_len; ++j) {
-        rng_interleaved[i + j * np] = rng_state[j + i * rng_len];
+    for (size_t f = 0; f < n_update_fns; ++f) {
+      for (size_t i = 0; i < np; ++i) {
+        for (size_t j = 0; j < rng_len; ++j) {
+          rng_interleaved[i + j * np + f * rng_len * np] = rng_state[j + i * rng_len + f * rng_len * np];
+        }
       }
     }
 
@@ -576,7 +582,7 @@ public:
 
     // This also imports the resample RNG, which is on the host
     for (size_t j = 0; j < rng_len; ++j) {
-      resample_rng_[j] = rng_state[np * rng_len + j];
+      resample_rng_[j] = rng_state[np * rng_len * n_update_fns + j];
     }
   }
 
@@ -719,7 +725,8 @@ private:
     // Set GPU RNG from a seed; primary reason for this construction
     // is to expand out seed correctly (e.g., it might be a 4-element
     // vector on first creation).
-    dust::random::prng<rng_state_type> rng(n_particles_total_ + 1, seed);
+    const size_t n_update_fns = dust::gpu::get_num_update_gpu_fns<model_type>();
+    dust::random::prng<rng_state_type> rng(n_particles_total_ * n_update_fns + 1, seed);
     set_rng_state(rng.export_state());
 
     set_cuda_launch();
@@ -741,9 +748,10 @@ private:
     const size_t n_internal_real = dust::gpu::internal_real_size<T>(s);
     const size_t n_shared_int = dust::gpu::shared_int_size<T>(s);
     const size_t n_shared_real = dust::gpu::shared_real_size<T>(s);
+    const size_t n_update_fns = dust::gpu::get_num_update_gpu_fns<model_type>();
     device_state_.initialise(n_particles_total_, n_state_full_, n_pars,
                              n_internal_int, n_internal_real,
-                             n_shared_int, n_shared_real);
+                             n_shared_int, n_shared_real, n_update_fns);
   }
 
   void set_device_shared(const std::vector<pars_type>& pars) {
