@@ -177,9 +177,6 @@ void run_particles(size_t time_start,
     // timestep
     size_t timestep_count = *d_time - time_start;
 
-    //printf("In kernel: timestep_count = %llu\n", timestep_count);
-    //printf("Remainder: %llu\n", timestep_count % 2);
-
     if (timestep_count % 2 == 1) {
       interleaved<real_type> tmp = p_state;
       p_state = p_state_next;
@@ -187,8 +184,6 @@ void run_particles(size_t time_start,
     }
 
     rng_state_type rng_block = get_rng_state<rng_state_type>(p_rng);
-
-    //printf("time: %llu; thread_id: %i; executing update fn: %llu\n", time, i, update_fn_idx);
 
     update_gpu_fns[update_fn_idx](
       *d_time,

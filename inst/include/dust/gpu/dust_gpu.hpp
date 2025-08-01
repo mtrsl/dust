@@ -224,6 +224,8 @@ public:
       dust::gpu::launch_control_simple(block_size, n_particles * n_state());
   }
 
+  // TODO(mjr) move most of the graph stuff to member data so it can be
+  // reused across multiple calls to `run`
   void run(const size_t time_end) {
 #ifdef __NVCC__
     if (time_end > time_) {
@@ -234,9 +236,6 @@ public:
       // Allocated the device time variables. Don't bother with initialising
       // values as they will be written before they're used anyway
       CUDA_CALL(cudaMalloc(&d_time, sizeof(size_t)));
-
-      // TODO(mjr) move most of the graph stuff to member data so it can be
-      // reused across multiple calls to `run`
 
       size_t time = time_start;
 
@@ -266,8 +265,6 @@ public:
       // `.emplace_back()`
       std::vector<std::vector<void *>> kernel_args(n_update_fns, std::vector<void *>(16, nullptr));
       std::vector<cudaKernelNodeParams> kernel_node_params(n_update_fns);
-
-      //std::cout << "`nodes` has " << nodes.size() << " elements\n";
 
       const size_t n_pars_effective_local = n_pars_effective();
       const real_type *y_local = device_state_.y.data();
@@ -312,8 +309,6 @@ public:
           .extra = nullptr
         };
 
-        //std::cout << "time = " << time << "; f = " << f << '\n';
-
         CUDA_CALL(cudaGraphAddKernelNode(&nodes[f], graph, nullptr, 0, &kernel_node_params[f]));
       }
 
@@ -341,7 +336,6 @@ public:
       //CUDA_CALL(cudaGraphDebugDotPrint(graph, "graph.dot", 0));
 
       // Declare and create an executable instance of the graph
-      //std::cout << "Instantiating executable graph\n";
       cudaGraphExec_t graph_exec;
       CUDA_CALL(cudaGraphInstantiate(&graph_exec, graph, 0));
 
