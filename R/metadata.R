@@ -155,7 +155,7 @@ parse_metadata_guess_class <- function(txt) {
 parse_code_has_gpu_support <- function(txt) {
   #re <- "void\\s+update_gpu\\s*<\\s*"
   #re <- "std::vector<update_gpu_ptr<.*>>\\s+get_update_gpu_fns\\s*<\\s*"
-  re <- "update_gpu_ptr<.*>\\*\\s+get_update_gpu_fns\\s*<\\s*"
+  re <- "update_gpu_kernel_ptr\\s*\\*\\s*get_update_gpu_kernels\\s*<\\s*"
   any(grepl(re, txt))
 }
 

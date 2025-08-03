@@ -239,15 +239,15 @@ public:
 
       size_t time = time_start;
 
-      // Get the number of update fns
-      const size_t n_update_fns = dust::gpu::get_num_update_gpu_fns<T>();
+      // Get the number of update kernels
+      const size_t n_update_kernels = dust::gpu::get_num_update_gpu_kernels<T>();
 
-      // Dynamically allocate a vector of indices from 0 to n_update_fns - 1.
+      // Dynamically allocate a vector of indices from 0 to n_update_kernels - 1.
       // These need to live long enough so that the graph api can copy the
       // values via pointers to these indices - temporaries aren't enough
-      std::vector<size_t> fn_ids(n_update_fns);
-      for (size_t f = 0; f < n_update_fns; f += 1) {
-        fn_ids[f] = f;
+      std::vector<size_t> kernel_ids(n_update_kernels);
+      for (size_t k = 0; k < n_update_kernels; k += 1) {
+        kernel_ids[k] = k;
       }
 
       // Declare graph handle
@@ -256,15 +256,15 @@ public:
       // Create an empty graph
       CUDA_CALL(cudaGraphCreate(&graph, 0));
 
-      // Create a kernel node for each of the update fns
-      std::vector<cudaGraphNode_t> nodes(n_update_fns);
+      // Create a kernel node for each of the update kernels
+      std::vector<cudaGraphNode_t> nodes(n_update_kernels);
 
       // Storage for the kernel args
       // TODO(mjr) change the hardcoded number of args here when needed. Maybe
       // better (definitely safer) to just use `.push_back()` or
       // `.emplace_back()`
-      std::vector<std::vector<void *>> kernel_args(n_update_fns, std::vector<void *>(16, nullptr));
-      std::vector<cudaKernelNodeParams> kernel_node_params(n_update_fns);
+      std::vector<std::vector<void *>> kernel_args(n_update_kernels, std::vector<void *>(16, nullptr));
+      std::vector<cudaKernelNodeParams> kernel_node_params(n_update_kernels);
 
       const size_t n_pars_effective_local = n_pars_effective();
       const real_type *y_local = device_state_.y.data();
@@ -275,41 +275,41 @@ public:
       const real_type *shared_real_local = device_state_.shared_real.data();
       const rng_int_type *rng_local = device_state_.rng.data();
 
+      void **kernels = dust::gpu::get_update_gpu_kernels<T>();
+
       // Create nodes with the appropriate params (copied from the original
       // kernel launch params etc) and add them to the graph
-      for (size_t f = 0; f < n_update_fns; f += 1) {
-        // Set the kernel arguments. The last argument is the index of the
-        // update function
+      for (size_t k = 0; k < n_update_kernels; k += 1) {
         // TODO(mjr) make a struct for most of the kernel arguments and then
         // just pass a ptr to the struct? Also see
         // https://github.com/mrc-ide/dust/issues/319
-        kernel_args[f][0] = (void *) &time_start;
-        kernel_args[f][1] = (void *) &d_time;
-        kernel_args[f][2] = (void *) &n_particles_total_;
-        kernel_args[f][3] = (void *) &n_pars_effective_local;
-        kernel_args[f][4] = (void *) &y_local;
-        kernel_args[f][5] = (void *) &y_next_local;
-        kernel_args[f][6] = (void *) &internal_int_local;
-        kernel_args[f][7] = (void *) &internal_real_local;
-        kernel_args[f][8] = (void *) &device_state_.n_shared_int;
-        kernel_args[f][9] = (void *) &device_state_.n_shared_real;
-        kernel_args[f][10] = (void *) &shared_int_local;
-        kernel_args[f][11] = (void *) &shared_real_local;
-        kernel_args[f][12] = (void *) &rng_local;
-        kernel_args[f][13] = (void *) &cuda_pars_.run.shared_int;
-        kernel_args[f][14] = (void *) &cuda_pars_.run.shared_real;
-        kernel_args[f][15] = (void *) &fn_ids[f];
+        kernel_args[k][0] = (void *) &time_start;
+        kernel_args[k][1] = (void *) &d_time;
+        kernel_args[k][2] = (void *) &n_particles_total_;
+        kernel_args[k][3] = (void *) &n_pars_effective_local;
+        kernel_args[k][4] = (void *) &y_local;
+        kernel_args[k][5] = (void *) &y_next_local;
+        kernel_args[k][6] = (void *) &internal_int_local;
+        kernel_args[k][7] = (void *) &internal_real_local;
+        kernel_args[k][8] = (void *) &device_state_.n_shared_int;
+        kernel_args[k][9] = (void *) &device_state_.n_shared_real;
+        kernel_args[k][10] = (void *) &shared_int_local;
+        kernel_args[k][11] = (void *) &shared_real_local;
+        kernel_args[k][12] = (void *) &rng_local;
+        kernel_args[k][13] = (void *) &cuda_pars_.run.shared_int;
+        kernel_args[k][14] = (void *) &cuda_pars_.run.shared_real;
+        kernel_args[k][15] = (void *) &kernel_ids[k];
 
-        kernel_node_params[f] = {
-          .func = (void*) dust::gpu::run_particles<T>,
+        kernel_node_params[k] = {
+          .func = (void*) kernels[k],
           .gridDim = cuda_pars_.run.block_count,
           .blockDim = cuda_pars_.run.block_size,
           .sharedMemBytes = (unsigned int) cuda_pars_.run.shared_size_bytes,
-          .kernelParams = (void **) kernel_args[f].data(),
+          .kernelParams = (void **) kernel_args[k].data(),
           .extra = nullptr
         };
 
-        CUDA_CALL(cudaGraphAddKernelNode(&nodes[f], graph, nullptr, 0, &kernel_node_params[f]));
+        CUDA_CALL(cudaGraphAddKernelNode(&nodes[k], graph, nullptr, 0, &kernel_node_params[k]));
       }
 
       // Get the number of update deps 
@@ -526,28 +526,28 @@ public:
   std::vector<rng_int_type> rng_state() {
     const size_t np = n_particles();
     constexpr size_t rng_len = rng_state_type::size();
-    const size_t n_update_fns = dust::gpu::get_num_update_gpu_fns<model_type>();
+    const size_t n_update_kernels = dust::gpu::get_num_update_gpu_kernels<model_type>();
 
-    std::vector<rng_int_type> rng_interleaved(np * rng_len * n_update_fns);
+    std::vector<rng_int_type> rng_interleaved(np * rng_len * n_update_kernels);
     // Pull from device
     device_state_.rng.get_array(rng_interleaved);
 
     // De-interleaved RNG state, copied from rng_interleaved, +1 is host rng
-    std::vector<rng_int_type> rng_state((np * n_update_fns + 1) * rng_len);
+    std::vector<rng_int_type> rng_state((np * n_update_kernels + 1) * rng_len);
 #ifdef _OPENMP
     #pragma omp parallel for schedule(static) num_threads(n_threads_)
 #endif
-    for (size_t f = 0; f < n_update_fns; ++f) {
+    for (size_t k = 0; k < n_update_kernels; ++k) {
       for (size_t i = 0; i < np; ++i) {
         for (size_t j = 0; j < rng_len; ++j) {
-          rng_state[j + i * rng_len + f * rng_len * np] = rng_interleaved[i + j * np + f * rng_len * np];
+          rng_state[j + i * rng_len + k * rng_len * np] = rng_interleaved[i + j * np + k * rng_len * np];
         }
       }
     }
 
     // Add the (host) resample state on the end
     for (size_t j = 0; j < rng_len; ++j) {
-      rng_state[np * rng_len * n_update_fns + j] = resample_rng_[j];
+      rng_state[np * rng_len * n_update_kernels + j] = resample_rng_[j];
     }
 
     return rng_state;
@@ -556,17 +556,17 @@ public:
   void set_rng_state(const std::vector<rng_int_type>& rng_state) {
     const size_t np = n_particles();
     constexpr size_t rng_len = rng_state_type::size();
-    const size_t n_update_fns = dust::gpu::get_num_update_gpu_fns<model_type>();
+    const size_t n_update_kernels = dust::gpu::get_num_update_gpu_kernels<model_type>();
 
     // Interleaved RNG state copied from rng_state
-    std::vector<rng_int_type> rng_interleaved(np * rng_len * n_update_fns);
+    std::vector<rng_int_type> rng_interleaved(np * rng_len * n_update_kernels);
 #ifdef _OPENMP
       #pragma omp parallel for schedule(static) num_threads(n_threads_)
 #endif
-    for (size_t f = 0; f < n_update_fns; ++f) {
+    for (size_t k = 0; k < n_update_kernels; ++k) {
       for (size_t i = 0; i < np; ++i) {
         for (size_t j = 0; j < rng_len; ++j) {
-          rng_interleaved[i + j * np + f * rng_len * np] = rng_state[j + i * rng_len + f * rng_len * np];
+          rng_interleaved[i + j * np + k * rng_len * np] = rng_state[j + i * rng_len + k * rng_len * np];
         }
       }
     }
@@ -576,7 +576,7 @@ public:
 
     // This also imports the resample RNG, which is on the host
     for (size_t j = 0; j < rng_len; ++j) {
-      resample_rng_[j] = rng_state[np * rng_len * n_update_fns + j];
+      resample_rng_[j] = rng_state[np * rng_len * n_update_kernels + j];
     }
   }
 
@@ -719,8 +719,9 @@ private:
     // Set GPU RNG from a seed; primary reason for this construction
     // is to expand out seed correctly (e.g., it might be a 4-element
     // vector on first creation).
-    const size_t n_update_fns = dust::gpu::get_num_update_gpu_fns<model_type>();
-    dust::random::prng<rng_state_type> rng(n_particles_total_ * n_update_fns + 1, seed);
+    const size_t n_update_kernels =
+      dust::gpu::get_num_update_gpu_kernels<model_type>();
+    dust::random::prng<rng_state_type> rng(n_particles_total_ * n_update_kernels + 1, seed);
     set_rng_state(rng.export_state());
 
     set_cuda_launch();
@@ -742,10 +743,10 @@ private:
     const size_t n_internal_real = dust::gpu::internal_real_size<T>(s);
     const size_t n_shared_int = dust::gpu::shared_int_size<T>(s);
     const size_t n_shared_real = dust::gpu::shared_real_size<T>(s);
-    const size_t n_update_fns = dust::gpu::get_num_update_gpu_fns<model_type>();
+    const size_t n_update_kernels = dust::gpu::get_num_update_gpu_kernels<model_type>();
     device_state_.initialise(n_particles_total_, n_state_full_, n_pars,
                              n_internal_int, n_internal_real,
-                             n_shared_int, n_shared_real, n_update_fns);
+                             n_shared_int, n_shared_real, n_update_kernels);
   }
 
   void set_device_shared(const std::vector<pars_type>& pars) {

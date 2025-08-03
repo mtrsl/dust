@@ -21,23 +21,21 @@ namespace gpu {
                 //typename T::rng_state_type& rng_state,
                 //interleaved<typename T::real_type> state_next);
 
-// Get the number of update functions
+// Get the number of update kernels
 template <typename T>
-__host__ __device__
-size_t get_num_update_gpu_fns();
+size_t get_num_update_gpu_kernels();
 
-// Get the array of update function pointers
+// Get the array of update kernel pointers
 template <typename T>
-__device__
-update_gpu_ptr<T>* get_update_gpu_fns();
+update_gpu_kernel_ptr* get_update_gpu_kernels();
 
-// Get the number of update function dependencies
+// Get the number of update kernel dependencies
 template <typename T>
 size_t get_num_update_gpu_dependencies();
 
-// Get the array of update function dependencies in the form {{i, j}, ...},
-// meaning that fn j depends on fn i, where the indices are into the fn ptr
-// array above
+// Get the array of update kernel dependencies in the form {{i, j}, ...},
+// meaning that kernel j depends on kernel i, where the indices are into the fn
+// ptr array above
 template <typename T>
 size_t (*get_update_gpu_dependencies())[2];
 
@@ -90,121 +88,6 @@ void scatter_device(const size_t* index,
     scatter_state[i] = state[scatter_index];
   }
 }
-
-template <typename T>
-__global__
-void run_particles(size_t time_start,
-                   size_t *d_time,
-                   size_t n_particles,
-                   size_t n_pars,
-                   typename T::real_type * state,
-                   typename T::real_type * state_next,
-                   int * internal_int,
-                   typename T::real_type * internal_real,
-                   size_t n_shared_int,
-                   size_t n_shared_real,
-                   const int * shared_int,
-                   const typename T::real_type * shared_real,
-                   typename T::rng_state_type::int_type * rng_state,
-                   bool use_shared_int,
-                   bool use_shared_real,
-                   size_t update_fn_idx) {
-  using real_type = typename T::real_type;
-  using rng_state_type = typename T::rng_state_type;
-  using rng_int_type = typename rng_state_type::int_type;
-  const size_t n_particles_each = n_particles / n_pars;
-  const auto data = nullptr;
-  const bool data_is_shared = false;
-
-  const update_gpu_ptr<T>* update_gpu_fns = get_update_gpu_fns<T>();
-
-#ifdef __CUDA_ARCH__
-  const int block_per_pars = (n_particles_each + blockDim.x - 1) / blockDim.x;
-  int j;
-  if (use_shared_int || use_shared_real) {
-    j = blockIdx.x / block_per_pars;
-  } else {
-    j = (blockIdx.x * blockDim.x + threadIdx.x) / n_particles_each;
-  }
-  device_ptrs<T> shared_state =
-    load_shared_state<T>(j,
-                         n_shared_int,
-                         n_shared_real,
-                         shared_int,
-                         shared_real,
-                         data,             // nullptr
-                         use_shared_int,
-                         use_shared_real,
-                         data_is_shared);  // false
-
-  int i, max_i;
-  if (use_shared_int || use_shared_real) {
-    // Pick particle index based on block, don't process if off the end
-    i = j * n_particles_each + (blockIdx.x % block_per_pars) * blockDim.x +
-      threadIdx.x;
-    max_i = n_particles_each * (j + 1);
-  } else {
-    // Otherwise CUDA thread number = particle
-    i = blockIdx.x * blockDim.x + threadIdx.x;
-    max_i = n_particles;
-  }
-
-  if (i < max_i) {
-#else
-    dust::utils::fatal_error("(mjr) `dust::gpu::run_particles()`: `__CUDA_ARCH__` not defined - bailing");
-
-  // omp here
-  for (size_t i = 0; i < n_particles; ++i) {
-    const int j = i / n_particles_each;
-    device_ptrs<T> shared_state =
-      load_shared_state<T>(j,
-                           n_shared_int,
-                           n_shared_real,
-                           shared_int,
-                           shared_real,
-                           data,             // nullptr
-                           use_shared_int,   // ignored
-                           use_shared_real,  // ignored
-                           data_is_shared);  // false
-#endif
-    interleaved<real_type> p_state(state, i, n_particles);
-    interleaved<real_type> p_state_next(state_next, i, n_particles);
-    interleaved<int> p_internal_int(internal_int, i, n_particles);
-    interleaved<real_type> p_internal_real(internal_real, i, n_particles);
-    interleaved<rng_int_type> p_rng(rng_state, i + update_fn_idx * n_particles * rng_state_type::size(), n_particles);
-
-    // Swap our local copies of the state/state_next pointers every other
-    // timestep
-    size_t timestep_count = *d_time - time_start;
-
-    if (timestep_count % 2 == 1) {
-      interleaved<real_type> tmp = p_state;
-      p_state = p_state_next;
-      p_state_next = tmp;
-    }
-
-    rng_state_type rng_block = get_rng_state<rng_state_type>(p_rng);
-
-    update_gpu_fns[update_fn_idx](
-      *d_time,
-      p_state,
-      p_internal_int,
-      p_internal_real,
-      shared_state.shared_int,
-      shared_state.shared_real,
-      rng_block,
-      p_state_next
-    );
-
-    // TODO(mjr) where should this go now? It was previously after each
-    // timestep (before swapping states) but here it's being called after every
-    // update function during every timestep.
-    SYNCWARP
-
-    put_rng_state(rng_block, p_rng);
-  }
-}
-
 
 // NOTE: there's an unfortunate overloading here where
 // "data_is_shared" refers to data being shared across parameters,
