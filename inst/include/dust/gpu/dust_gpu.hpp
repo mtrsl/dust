@@ -255,7 +255,7 @@ public:
       // TODO(mjr) change the hardcoded number of args here when needed. Maybe
       // better (definitely safer) to just use `.push_back()` or
       // `.emplace_back()`
-      std::vector<void *> kernel_args(15, nullptr);
+      std::vector<std::vector<void *>> kernel_args(n_update_kernels, std::vector<void *>(15, nullptr));
       std::vector<cudaKernelNodeParams> kernel_node_params(n_update_kernels);
 
       const size_t n_pars_effective_local = n_pars_effective();
@@ -269,31 +269,41 @@ public:
 
       void **kernels = dust::gpu::get_update_gpu_kernels<T>();
 
-      kernel_args[0] = (void *) &time_start;
-      kernel_args[1] = (void *) &d_time;
-      kernel_args[2] = (void *) &n_particles_total_;
-      kernel_args[3] = (void *) &n_pars_effective_local;
-      kernel_args[4] = (void *) &y_local;
-      kernel_args[5] = (void *) &y_next_local;
-      kernel_args[6] = (void *) &internal_int_local;
-      kernel_args[7] = (void *) &internal_real_local;
-      kernel_args[8] = (void *) &device_state_.n_shared_int;
-      kernel_args[9] = (void *) &device_state_.n_shared_real;
-      kernel_args[10] = (void *) &shared_int_local;
-      kernel_args[11] = (void *) &shared_real_local;
-      kernel_args[12] = (void *) &rng_local;
-      kernel_args[13] = (void *) &cuda_pars_.run.shared_int;
-      kernel_args[14] = (void *) &cuda_pars_.run.shared_real;
-
       // Create nodes with the appropriate params (copied from the original
       // kernel launch params etc) and add them to the graph
       for (size_t k = 0; k < n_update_kernels; k += 1) {
+        // TODO(mjr) make a struct for most of the kernel arguments and then
+        // just pass a ptr to the struct? Also see
+        // https://github.com/mrc-ide/dust/issues/319
+
+        // Calculate the offset ptr to this kernel's bit of RNG state
+        // Do this in host code (which is apparently allowed for device ptr) to
+        // reduce the interleaving work in each kernel, hopefully encouraging
+        // more parallelisation of kernels
+        const rng_int_type *rng_kernel = rng_local + k * n_particles_total_ * rng_state_type::size();
+
+        kernel_args[k][0] = (void *) &time_start;
+        kernel_args[k][1] = (void *) &d_time;
+        kernel_args[k][2] = (void *) &n_particles_total_;
+        kernel_args[k][3] = (void *) &n_pars_effective_local;
+        kernel_args[k][4] = (void *) &y_local;
+        kernel_args[k][5] = (void *) &y_next_local;
+        kernel_args[k][6] = (void *) &internal_int_local;
+        kernel_args[k][7] = (void *) &internal_real_local;
+        kernel_args[k][8] = (void *) &device_state_.n_shared_int;
+        kernel_args[k][9] = (void *) &device_state_.n_shared_real;
+        kernel_args[k][10] = (void *) &shared_int_local;
+        kernel_args[k][11] = (void *) &shared_real_local;
+        kernel_args[k][12] = (void *) &rng_kernel;
+        kernel_args[k][13] = (void *) &cuda_pars_.run.shared_int;
+        kernel_args[k][14] = (void *) &cuda_pars_.run.shared_real;
+
         kernel_node_params[k] = {
           .func = (void*) kernels[k],
           .gridDim = cuda_pars_.run.block_count,
           .blockDim = cuda_pars_.run.block_size,
           .sharedMemBytes = (unsigned int) cuda_pars_.run.shared_size_bytes,
-          .kernelParams = (void **) kernel_args.data(),
+          .kernelParams = (void **) kernel_args[k].data(),
           .extra = nullptr
         };
 
