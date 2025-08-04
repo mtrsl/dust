@@ -265,9 +265,10 @@ public:
       const real_type *internal_real_local = device_state_.internal_real.data();
       const int *shared_int_local = device_state_.shared_int.data();
       const real_type *shared_real_local = device_state_.shared_real.data();
-      const rng_int_type *rng_local = device_state_.rng.data();
 
       void **kernels = dust::gpu::get_update_gpu_kernels<T>();
+
+      std::vector<rng_int_type *> rng_kernel;
 
       // Create nodes with the appropriate params (copied from the original
       // kernel launch params etc) and add them to the graph
@@ -280,7 +281,7 @@ public:
         // Do this in host code (which is apparently allowed for device ptr) to
         // reduce the interleaving work in each kernel, hopefully encouraging
         // more parallelisation of kernels
-        const rng_int_type *rng_kernel = rng_local + k * n_particles_total_ * rng_state_type::size();
+        rng_kernel.push_back(device_state_.rng.data() + k * n_particles_total_ * rng_state_type::size());
 
         kernel_args[k][0] = (void *) &time_start;
         kernel_args[k][1] = (void *) &d_time;
@@ -294,7 +295,7 @@ public:
         kernel_args[k][9] = (void *) &device_state_.n_shared_real;
         kernel_args[k][10] = (void *) &shared_int_local;
         kernel_args[k][11] = (void *) &shared_real_local;
-        kernel_args[k][12] = (void *) &rng_kernel;
+        kernel_args[k][12] = (void *) &rng_kernel[k];
         kernel_args[k][13] = (void *) &cuda_pars_.run.shared_int;
         kernel_args[k][14] = (void *) &cuda_pars_.run.shared_real;
 
