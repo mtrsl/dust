@@ -277,11 +277,7 @@ public:
         // just pass a ptr to the struct? Also see
         // https://github.com/mrc-ide/dust/issues/319
 
-        // Calculate the offset ptr to this kernel's bit of RNG state
-        // Do this in host code (which is apparently allowed for device ptr) to
-        // reduce the interleaving work in each kernel, hopefully encouraging
-        // more parallelisation of kernels
-        rng_kernel.push_back(device_state_.rng.data() + k * n_particles_total_ * rng_state_type::size());
+        rng_kernel.push_back(device_state_.rng[k].data());
 
         kernel_args[k][0] = (void *) &time_start;
         kernel_args[k][1] = (void *) &d_time;
@@ -527,9 +523,12 @@ public:
     constexpr size_t rng_len = rng_state_type::size();
     const size_t n_update_kernels = dust::gpu::get_num_update_gpu_kernels<model_type>();
 
-    std::vector<rng_int_type> rng_interleaved(np * rng_len * n_update_kernels);
+    std::vector<std::vector<rng_int_type>> rng_interleaved(n_update_kernels, std::vector<rng_int_type>(np * rng_len));
     // Pull from device
-    device_state_.rng.get_array(rng_interleaved);
+
+    for (size_t k = 0; k < n_update_kernels; ++k) {
+      device_state_.rng[k].get_array(rng_interleaved[k]);
+    }
 
     // De-interleaved RNG state, copied from rng_interleaved, +1 is host rng
     std::vector<rng_int_type> rng_state((np * n_update_kernels + 1) * rng_len);
@@ -539,7 +538,7 @@ public:
     for (size_t k = 0; k < n_update_kernels; ++k) {
       for (size_t i = 0; i < np; ++i) {
         for (size_t j = 0; j < rng_len; ++j) {
-          rng_state[j + i * rng_len + k * rng_len * np] = rng_interleaved[i + j * np + k * rng_len * np];
+          rng_state[j + i * rng_len + k * rng_len * np] = rng_interleaved[k][i + j * np];
         }
       }
     }
@@ -558,20 +557,22 @@ public:
     const size_t n_update_kernels = dust::gpu::get_num_update_gpu_kernels<model_type>();
 
     // Interleaved RNG state copied from rng_state
-    std::vector<rng_int_type> rng_interleaved(np * rng_len * n_update_kernels);
+    std::vector<std::vector<rng_int_type>> rng_interleaved(n_update_kernels, std::vector<rng_int_type>(np * rng_len));
 #ifdef _OPENMP
       #pragma omp parallel for schedule(static) num_threads(n_threads_)
 #endif
     for (size_t k = 0; k < n_update_kernels; ++k) {
       for (size_t i = 0; i < np; ++i) {
         for (size_t j = 0; j < rng_len; ++j) {
-          rng_interleaved[i + j * np + k * rng_len * np] = rng_state[j + i * rng_len + k * rng_len * np];
+          rng_interleaved[k][i + j * np] = rng_state[j + i * rng_len + k * rng_len * np];
         }
       }
     }
 
     // Push onto device
-    device_state_.rng.set_array(rng_interleaved);
+    for (size_t k = 0; k < n_update_kernels; ++k) {
+      device_state_.rng[k].set_array(rng_interleaved[k]);
+    }
 
     // This also imports the resample RNG, which is on the host
     for (size_t j = 0; j < rng_len; ++j) {
@@ -628,7 +629,9 @@ public:
                      device_state_.shared_int.data(),
                      device_state_.shared_real.data(),
                      device_data_.data() + data_offset,
-                     device_state_.rng.data(),
+                     // TODO(mjr) this passes the RNG state for the first update kernel as a quick "fix"
+                     // What's the right thing to do here? Use a separate RNG for compare?
+                     device_state_.rng[0].data(),
                      cuda_pars_.compare.shared_int,
                      cuda_pars_.compare.shared_real,
                      data_is_shared_);
@@ -648,7 +651,8 @@ public:
                      device_state_.shared_int.data(),
                      device_state_.shared_real.data(),
                      device_data_.data() + data_offset,
-                     device_state_.rng.data(),
+                     // TODO(mjr) see above
+                     device_state_.rng[0].data(),
                      use_shared_int,
                      use_shared_real,
                      data_is_shared_);
