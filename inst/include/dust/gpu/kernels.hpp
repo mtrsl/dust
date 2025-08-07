@@ -43,6 +43,12 @@ size_t (*get_update_gpu_dependencies())[2];
 template <typename T>
 bool *get_update_gpu_kernels_use_rng();
 
+// Get the number of kernels that require an RNG
+// Could work this out from the array by counting how many `true` entries there
+// are but this is nicer
+template <typename T>
+size_t get_num_update_gpu_kernels_use_rng();
+
 template <typename T>
 __device__
 typename T::real_type compare_gpu(

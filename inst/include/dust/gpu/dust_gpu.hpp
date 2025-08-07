@@ -270,6 +270,12 @@ public:
 
       std::vector<rng_int_type *> rng_kernel;
 
+      // Count how many kernels have needed an RNG so far in the loop below.
+      // Just makes it easier to use our bool array...
+      size_t kernels_use_rng_count = 0;
+
+      bool *kernels_use_rng = dust::gpu::get_update_gpu_kernels_use_rng<T>();
+
       // Create nodes with the appropriate params (copied from the original
       // kernel launch params etc) and add them to the graph
       for (size_t k = 0; k < n_update_kernels; k += 1) {
@@ -277,7 +283,12 @@ public:
         // just pass a ptr to the struct? Also see
         // https://github.com/mrc-ide/dust/issues/319
 
-        rng_kernel.push_back(device_state_.rng[k].data());
+        if (kernels_use_rng[k]) {
+          rng_kernel.push_back(device_state_.rng[kernels_use_rng_count].data());
+          kernels_use_rng_count += 1;
+        } else {
+          rng_kernel.push_back(nullptr);
+        }
 
         kernel_args[k][0] = (void *) &time_start;
         kernel_args[k][1] = (void *) &d_time;
@@ -521,21 +532,25 @@ public:
   std::vector<rng_int_type> rng_state() {
     const size_t np = n_particles();
     constexpr size_t rng_len = rng_state_type::size();
-    const size_t n_update_kernels = dust::gpu::get_num_update_gpu_kernels<model_type>();
+    const size_t n_update_kernels_use_rng = dust::gpu::get_num_update_gpu_kernels_use_rng<model_type>();
 
-    std::vector<std::vector<rng_int_type>> rng_interleaved(n_update_kernels, std::vector<rng_int_type>(np * rng_len));
+    std::vector<std::vector<rng_int_type>> rng_interleaved(
+      n_update_kernels_use_rng,
+      std::vector<rng_int_type>(np * rng_len)
+    );
+
     // Pull from device
 
-    for (size_t k = 0; k < n_update_kernels; ++k) {
+    for (size_t k = 0; k < n_update_kernels_use_rng; ++k) {
       device_state_.rng[k].get_array(rng_interleaved[k]);
     }
 
     // De-interleaved RNG state, copied from rng_interleaved, +1 is host rng
-    std::vector<rng_int_type> rng_state((np * n_update_kernels + 1) * rng_len);
+    std::vector<rng_int_type> rng_state((np * n_update_kernels_use_rng + 1) * rng_len);
 #ifdef _OPENMP
     #pragma omp parallel for schedule(static) num_threads(n_threads_)
 #endif
-    for (size_t k = 0; k < n_update_kernels; ++k) {
+    for (size_t k = 0; k < n_update_kernels_use_rng; ++k) {
       for (size_t i = 0; i < np; ++i) {
         for (size_t j = 0; j < rng_len; ++j) {
           rng_state[j + i * rng_len + k * rng_len * np] = rng_interleaved[k][i + j * np];
@@ -545,7 +560,7 @@ public:
 
     // Add the (host) resample state on the end
     for (size_t j = 0; j < rng_len; ++j) {
-      rng_state[np * rng_len * n_update_kernels + j] = resample_rng_[j];
+      rng_state[np * rng_len * n_update_kernels_use_rng + j] = resample_rng_[j];
     }
 
     return rng_state;
@@ -554,14 +569,18 @@ public:
   void set_rng_state(const std::vector<rng_int_type>& rng_state) {
     const size_t np = n_particles();
     constexpr size_t rng_len = rng_state_type::size();
-    const size_t n_update_kernels = dust::gpu::get_num_update_gpu_kernels<model_type>();
+    const size_t n_update_kernels_use_rng = dust::gpu::get_num_update_gpu_kernels_use_rng<model_type>();
 
     // Interleaved RNG state copied from rng_state
-    std::vector<std::vector<rng_int_type>> rng_interleaved(n_update_kernels, std::vector<rng_int_type>(np * rng_len));
+    std::vector<std::vector<rng_int_type>> rng_interleaved(
+      n_update_kernels_use_rng,
+      std::vector<rng_int_type>(np * rng_len)
+    );
+
 #ifdef _OPENMP
       #pragma omp parallel for schedule(static) num_threads(n_threads_)
 #endif
-    for (size_t k = 0; k < n_update_kernels; ++k) {
+    for (size_t k = 0; k < n_update_kernels_use_rng; ++k) {
       for (size_t i = 0; i < np; ++i) {
         for (size_t j = 0; j < rng_len; ++j) {
           rng_interleaved[k][i + j * np] = rng_state[j + i * rng_len + k * rng_len * np];
@@ -570,13 +589,13 @@ public:
     }
 
     // Push onto device
-    for (size_t k = 0; k < n_update_kernels; ++k) {
+    for (size_t k = 0; k < n_update_kernels_use_rng; ++k) {
       device_state_.rng[k].set_array(rng_interleaved[k]);
     }
 
     // This also imports the resample RNG, which is on the host
     for (size_t j = 0; j < rng_len; ++j) {
-      resample_rng_[j] = rng_state[np * rng_len * n_update_kernels + j];
+      resample_rng_[j] = rng_state[np * rng_len * n_update_kernels_use_rng + j];
     }
   }
 
@@ -722,9 +741,9 @@ private:
     // Set GPU RNG from a seed; primary reason for this construction
     // is to expand out seed correctly (e.g., it might be a 4-element
     // vector on first creation).
-    const size_t n_update_kernels =
-      dust::gpu::get_num_update_gpu_kernels<model_type>();
-    dust::random::prng<rng_state_type> rng(n_particles_total_ * n_update_kernels + 1, seed);
+    const size_t n_update_kernels_use_rng =
+      dust::gpu::get_num_update_gpu_kernels_use_rng<model_type>();
+    dust::random::prng<rng_state_type> rng(n_particles_total_ * n_update_kernels_use_rng + 1, seed);
     set_rng_state(rng.export_state());
 
     set_cuda_launch();
@@ -746,10 +765,11 @@ private:
     const size_t n_internal_real = dust::gpu::internal_real_size<T>(s);
     const size_t n_shared_int = dust::gpu::shared_int_size<T>(s);
     const size_t n_shared_real = dust::gpu::shared_real_size<T>(s);
-    const size_t n_update_kernels = dust::gpu::get_num_update_gpu_kernels<model_type>();
+    const size_t n_update_kernels_use_rng =
+      dust::gpu::get_num_update_gpu_kernels_use_rng<model_type>();
     device_state_.initialise(n_particles_total_, n_state_full_, n_pars,
                              n_internal_int, n_internal_real,
-                             n_shared_int, n_shared_real, n_update_kernels);
+                             n_shared_int, n_shared_real, n_update_kernels_use_rng);
   }
 
   void set_device_shared(const std::vector<pars_type>& pars) {
