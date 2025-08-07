@@ -7,20 +7,6 @@
 namespace dust {
 namespace gpu {
 
-// This is the main model update, will be defined by the model code
-// (see inst/examples/variable.cpp for an example). This is unique
-// within the file in that we expect that the user will specialise it.
-//template <typename T>
-//__device__
-//void update_gpu(size_t time,
-                //const interleaved<typename T::real_type> state,
-                //interleaved<int> internal_int,
-                //interleaved<typename T::real_type> internal_real,
-                //const int * shared_int,
-                //const typename T::real_type * shared_real,
-                //typename T::rng_state_type& rng_state,
-                //interleaved<typename T::real_type> state_next);
-
 // Get the number of update kernels
 template <typename T>
 size_t get_num_update_gpu_kernels();
