@@ -39,6 +39,10 @@ size_t get_num_update_gpu_dependencies();
 template <typename T>
 size_t (*get_update_gpu_dependencies())[2];
 
+// Get the array of booleans indicating whether each kernel requires an RNG
+template <typename T>
+bool *get_update_gpu_kernels_use_rng();
+
 template <typename T>
 __device__
 typename T::real_type compare_gpu(
