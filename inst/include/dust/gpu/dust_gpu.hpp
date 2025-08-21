@@ -276,6 +276,9 @@ public:
 
       bool *kernels_use_rng = dust::gpu::get_update_gpu_kernels_use_rng<T>();
 
+      // false value we can take ptrs to for disabling shared mem
+      bool f = false;
+
       // Create nodes with the appropriate params (copied from the original
       // kernel launch params etc) and add them to the graph
       for (size_t k = 0; k < n_update_kernels; k += 1) {
@@ -303,14 +306,25 @@ public:
         kernel_args[k][10] = (void *) &shared_int_local;
         kernel_args[k][11] = (void *) &shared_real_local;
         kernel_args[k][12] = (void *) &rng_kernel[k];
-        kernel_args[k][13] = (void *) &cuda_pars_.run.shared_int;
-        kernel_args[k][14] = (void *) &cuda_pars_.run.shared_real;
+        //kernel_args[k][13] = (void *) &cuda_pars_.run.shared_int;
+        //kernel_args[k][14] = (void *) &cuda_pars_.run.shared_real;
+        kernel_args[k][13] = (void *) &f;
+        kernel_args[k][14] = (void *) &f;
+
+        //if (force_no_shared_data) {
+          //kernel_args[k][13] = (void *) &f;
+          //kernel_args[k][14] = (void *) &f;
+        //} else {
+          //kernel_args[k][13] = (void *) &cuda_pars_.run.shared_int;
+          //kernel_args[k][14] = (void *) &cuda_pars_.run.shared_real;
+        //}
 
         kernel_node_params[k] = {
           .func = (void*) kernels[k],
           .gridDim = cuda_pars_.run.block_count,
           .blockDim = cuda_pars_.run.block_size,
-          .sharedMemBytes = (unsigned int) cuda_pars_.run.shared_size_bytes,
+          //.sharedMemBytes = (unsigned int) cuda_pars_.run.shared_size_bytes,
+          .sharedMemBytes = (unsigned int) 0,
           .kernelParams = (void **) kernel_args[k].data(),
           .extra = nullptr
         };
