@@ -31,7 +31,7 @@
 
 #include "dust/random/cuda_compatibility.hpp"
 #include "dust/random/utils.hpp"
-#include "dust/random/xoshiro_state.hpp"
+#include "dust/random/rng_interface.hpp"
 
 // 32 bit generators, 4 * uint32_t
 #include "dust/random/xoshiro128.hpp"
@@ -44,6 +44,9 @@
 
 // 64 bit generators, 8 * uint64_t
 #include "dust/random/xoshiro512.hpp"
+
+// 4x32 10-round Philox counter-based generator
+#include "dust/random/philox.hpp"
 
 namespace dust {
 namespace random {
@@ -59,10 +62,14 @@ namespace random {
 /// @param state The random number state, will be updated as a side effect
 template <typename T>
 inline __host__ void jump(T& state) {
-  using int_type = typename T::int_type;
-  constexpr auto N = T::size();
-  constexpr std::array<int_type, N> jump = jump_constants<T>();
-  rng_jump_state(state, jump);
+  if constexpr (T::counter_based) {
+    return;
+  } else {
+    using int_type = typename T::int_type;
+    constexpr auto N = T::size();
+    constexpr std::array<int_type, N> jump = jump_constants<T>();
+    rng_jump_state(state, jump);
+  }
 }
 
 
@@ -77,10 +84,14 @@ inline __host__ void jump(T& state) {
 /// @param state The random number state, will be updated as a side effect
 template <typename T>
 inline __host__ void long_jump(T& state) {
-  using int_type = typename T::int_type;
-  constexpr auto N = T::size();
-  constexpr std::array<int_type, N> jump = long_jump_constants<T>();
-  rng_jump_state(state, jump);
+  if constexpr (T::counter_based) {
+    return;
+  } else {
+    using int_type = typename T::int_type;
+    constexpr auto N = T::size();
+    constexpr std::array<int_type, N> jump = long_jump_constants<T>();
+    rng_jump_state(state, jump);
+  }
 }
 
 template <typename T>
