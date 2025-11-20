@@ -30,7 +30,7 @@ template <typename T>
 cpp11::list dust_cpu_alloc(cpp11::list r_pars, bool pars_multi,
                            cpp11::sexp r_time,
                            cpp11::sexp r_n_particles, int n_threads,
-                           cpp11::sexp r_seed, bool deterministic,
+                           bool deterministic,
                            cpp11::sexp r_gpu_config,
                            cpp11::sexp r_ode_control) {
   if (r_ode_control != R_NilValue) {
@@ -43,18 +43,18 @@ cpp11::list dust_cpu_alloc(cpp11::list r_pars, bool pars_multi,
   if (pars_multi) {
     auto inputs =
       dust::r::process_inputs_multi<T, size_t>(r_pars, r_time, r_n_particles,
-                                               n_threads, r_seed);
+                                               n_threads);
     info = inputs.info;
     d = new dust_cpu<T>(inputs.pars, inputs.time, inputs.n_particles,
-                        inputs.n_threads, inputs.seed, deterministic,
+                        inputs.n_threads, deterministic,
                         inputs.shape);
   } else {
     auto inputs =
       dust::r::process_inputs_single<T, size_t>(r_pars, r_time, r_n_particles,
-                                                n_threads, r_seed);
+                                                n_threads);
     info = inputs.info;
     d = new dust_cpu<T>(inputs.pars[0], inputs.time, inputs.n_particles,
-                        inputs.n_threads, inputs.seed, deterministic);
+                        inputs.n_threads, deterministic);
   }
   cpp11::external_pointer<dust_cpu<T>> ptr(d, true, false);
 
@@ -68,7 +68,7 @@ template <typename T>
 cpp11::list dust_gpu_alloc(cpp11::list r_pars, bool pars_multi,
                            cpp11::sexp r_time,
                            cpp11::sexp r_n_particles, int n_threads,
-                           cpp11::sexp r_seed, bool deterministic,
+                           bool deterministic,
                            cpp11::sexp r_gpu_config,
                            cpp11::sexp r_ode_control) {
   const dust::gpu::gpu_config gpu_config =
@@ -85,18 +85,18 @@ cpp11::list dust_gpu_alloc(cpp11::list r_pars, bool pars_multi,
   if (pars_multi) {
     auto inputs =
       dust::r::process_inputs_multi<T, size_t>(r_pars, r_time, r_n_particles,
-                                       n_threads, r_seed);
+                                       n_threads);
     info = inputs.info;
     d = new dust_gpu<T>(inputs.pars, inputs.time, inputs.n_particles,
-                        inputs.n_threads, inputs.seed,
+                        inputs.n_threads,
                         inputs.shape, gpu_config);
   } else {
     auto inputs =
       dust::r::process_inputs_single<T, size_t>(r_pars, r_time, r_n_particles,
-                                                n_threads, r_seed);
+                                                n_threads);
     info = inputs.info;
     d = new dust_gpu<T>(inputs.pars[0], inputs.time, inputs.n_particles,
-                        inputs.n_threads, inputs.seed, gpu_config);
+                        inputs.n_threads, gpu_config);
   }
   cpp11::external_pointer<dust_gpu<T>> ptr(d, true, false);
 
@@ -113,7 +113,7 @@ template <typename T>
 cpp11::list dust_ode_alloc(cpp11::list r_pars, bool pars_multi,
                            cpp11::sexp r_time,
                            cpp11::sexp r_n_particles, size_t n_threads,
-                           cpp11::sexp r_seed, bool deterministic,
+                           bool deterministic,
                            cpp11::sexp r_gpu_config,
                            cpp11::sexp r_ode_control) {
   using real_type = typename dust_ode<T>::real_type;
@@ -125,17 +125,17 @@ cpp11::list dust_ode_alloc(cpp11::list r_pars, bool pars_multi,
 
   if (pars_multi) {
     auto inputs =
-      dust::r::process_inputs_multi<T, time_type>(r_pars, r_time, r_n_particles, n_threads, r_seed);
+      dust::r::process_inputs_multi<T, time_type>(r_pars, r_time, r_n_particles, n_threads);
     info = inputs.info;
     d = new dust_ode<T>(inputs.pars, inputs.time, inputs.n_particles,
-                        inputs.n_threads, ctl, inputs.seed, deterministic,
+                        inputs.n_threads, ctl, deterministic,
                         inputs.shape);
   } else {
     auto inputs =
-      dust::r::process_inputs_single<T, time_type>(r_pars, r_time, r_n_particles, n_threads, r_seed);
+      dust::r::process_inputs_single<T, time_type>(r_pars, r_time, r_n_particles, n_threads);
     info = inputs.info;
     d = new dust_ode<T>(inputs.pars[0], inputs.time, inputs.n_particles,
-                        inputs.n_threads, ctl, inputs.seed, deterministic);
+                        inputs.n_threads, ctl, deterministic);
   }
 
   cpp11::external_pointer<dust_ode<T>> ptr(d, true, false);
@@ -441,37 +441,6 @@ SEXP dust_resample(SEXP ptr, cpp11::doubles r_weights) {
 }
 
 template <typename T>
-SEXP dust_rng_state(SEXP ptr, bool first_only, bool last_only) {
-  T *obj = cpp11::as_cpp<cpp11::external_pointer<T>>(ptr).get();
-  using rng_state_type = typename T::rng_state_type;
-  auto state = obj->rng_state();
-  if (first_only && last_only) {
-    cpp11::stop("Only one of 'first_only' or 'last_only' may be TRUE");
-  }
-  size_t n = (first_only || last_only) ? rng_state_type::size() : state.size();
-  size_t rng_offset = last_only ? obj->n_particles() * n : 0;
-  size_t len = sizeof(typename rng_state_type::int_type) * n;
-  cpp11::writable::raws ret(len);
-  std::memcpy(RAW(ret), state.data() + rng_offset, len);
-  return ret;
-}
-
-template <typename T>
-void dust_set_rng_state(SEXP ptr, cpp11::raws rng_state) {
-  T *obj = cpp11::as_cpp<cpp11::external_pointer<T>>(ptr).get();
-  using int_type = typename T::rng_state_type::int_type;
-  auto prev_state = obj->rng_state();
-  size_t len = prev_state.size() * sizeof(int_type);
-  if ((size_t)rng_state.size() != len) {
-    cpp11::stop("'rng_state' must be a raw vector of length %d (but was %d)",
-                len, rng_state.size());
-  }
-  std::vector<int_type> state(prev_state.size());
-  std::memcpy(state.data(), RAW(rng_state), len);
-  obj->set_rng_state(state);
-}
-
-template <typename T>
 void dust_set_n_threads(SEXP ptr, int n_threads) {
   T *obj = cpp11::as_cpp<cpp11::external_pointer<T>>(ptr).get();
   dust::r::validate_positive(n_threads, "n_threads");
@@ -664,13 +633,13 @@ cpp11::sexp dust_capabilities() {
   bool compare = !std::is_same<dust::no_data, typename T::data_type>::value;
   using real_type = typename T::real_type;
   auto real_size = sizeof(real_type);
-  auto rng_algorithm =
-    dust::random::r::algorithm_name<typename T::rng_state_type>();
+  //auto rng_algorithm =
+    //dust::random::r::algorithm_name<typename T::rng_state_type>();
   auto time_type = dust_time_type<typename T::time_type>();
   return cpp11::writable::list({"openmp"_nm = openmp,
                                 "compare"_nm = compare,
                                 "gpu"_nm = gpu,
-                                "rng_algorithm"_nm = rng_algorithm,
+                                //"rng_algorithm"_nm = rng_algorithm,
                                 "time_type"_nm = time_type,
                                 "real_size"_nm = real_size * CHAR_BIT});
 }
