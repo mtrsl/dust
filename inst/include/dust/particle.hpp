@@ -15,18 +15,17 @@ public:
   using time_type = size_t;
   using real_type = typename T::real_type;
   using data_type = typename T::data_type;
-  using rng_state_type = typename T::rng_state_type;
 
-  particle(pars_type pars, time_type time, rng_state_type& rng_state) :
+  particle(pars_type pars, time_type time) :
     model_(pars),
     time_(time),
-    y_(model_.initial(time_, rng_state)),
+    y_(model_.initial(time_)),
     y_swap_(model_.size()) {
   }
 
-  void run(const time_type time_end, rng_state_type& rng_state) {
+  void run(const time_type time_end) {
     while (time_ < time_end) {
-      model_.update(time_, y_.data(), rng_state, y_swap_.data());
+      model_.update(time_, y_.data(), y_swap_.data());
       time_++;
       std::swap(y_, y_swap_);
     }
@@ -65,8 +64,7 @@ public:
     y_swap_ = other.y_;
   }
 
-  void set_pars(const pars_type pars, const time_type time, bool set_state,
-                rng_state_type& rng_state) {
+  void set_pars(const pars_type pars, const time_type time, bool set_state) {
     const auto m = T(pars);
     if (m.size() != size()) {
       std::stringstream msg;
@@ -78,7 +76,7 @@ public:
     model_ = m;
     time_ = time;
     if (set_state) {
-      y_ = model_.initial(time_, rng_state);
+      y_ = model_.initial(time_);
     }
   }
 
@@ -95,8 +93,8 @@ public:
     }
   }
 
-  real_type compare_data(const data_type& data, rng_state_type& rng_state) {
-    return model_.compare_data(y_.data(), data, rng_state);
+  real_type compare_data(const data_type& data) {
+    return model_.compare_data(y_.data(), data);
   }
 
   T& model() {
