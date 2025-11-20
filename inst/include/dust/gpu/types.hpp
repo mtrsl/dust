@@ -300,28 +300,26 @@ private:
   size_t size_;
 };
 
-template <typename real_type, typename rng_state_type>
+template <typename real_type>
 struct device_state {
-  void initialise(size_t n_particles_, size_t n_state, size_t n_pars_,
-                  size_t n_internal_int, size_t n_internal_real,
-                  size_t n_shared_int_, size_t n_shared_real_,
-                  size_t n_update_kernels_use_rng) {
+  void initialise(size_t n_particles_,
+                  size_t n_state,
+                  size_t n_pars_,
+                  size_t n_internal_int,
+                  size_t n_internal_real,
+                  size_t n_shared_int_,
+                  size_t n_shared_real_) {
     n_particles = n_particles_;
     // NOTE: this is never read
     n_pars = n_pars_;
     n_shared_int = n_shared_int_;
     n_shared_real = n_shared_real_;
-    constexpr size_t n_rng = rng_state_type::size();
     y = device_array<real_type>(n_state * n_particles);
     y_next = device_array<real_type>(n_state * n_particles);
     internal_int = device_array<int>(n_internal_int * n_particles);
     internal_real = device_array<real_type>(n_internal_real * n_particles);
     shared_int = device_array<int>(n_shared_int * n_pars);
     shared_real = device_array<real_type>(n_shared_real * n_pars);
-    rng = std::vector<device_array<typename rng_state_type::int_type>>(
-      n_update_kernels_use_rng,
-      device_array<typename rng_state_type::int_type>(n_rng * n_particles)
-    );
     index = device_array<char>(n_state * n_particles);
     n_selected = device_array<int>(1);
     scatter_index = device_array<size_t>(n_particles);
@@ -404,7 +402,6 @@ struct device_state {
   device_array<real_type> internal_real;
   device_array<int> shared_int;
   device_array<real_type> shared_real;
-  std::vector<device_array<typename rng_state_type::int_type>> rng;
   device_array<char> index;
   device_array<size_t> index_state_scatter;
   device_array<int> n_selected;
@@ -677,26 +674,6 @@ struct device_ptrs {
   const typename T::real_type * shared_real;
   const typename T::data_type * data;
 };
-
-template <typename rng_state_type>
-__device__
-rng_state_type get_rng_state(const interleaved<typename rng_state_type::int_type>& full_rng_state) {
-  rng_state_type rng_state;
-  for (size_t i = 0; i < rng_state.size(); i++) {
-    rng_state.state[i] = full_rng_state[i];
-  }
-  return rng_state;
-}
-
-// Write state into global memory
-template <typename rng_state_type>
-__device__
-void put_rng_state(rng_state_type& rng_state,
-                   interleaved<typename rng_state_type::int_type>& full_rng_state) {
-  for (size_t i = 0; i < rng_state.size(); i++) {
-    full_rng_state[i] = rng_state.state[i];
-  }
-}
 
 // (mjr) It seems like you can't make an actually good type alias for kernels
 // (but I should double check this), so just use (void *) for now
