@@ -37,14 +37,19 @@ public:
   using data_type = typename T::data_type;
   using internal_type = typename T::internal_type;
   using shared_type = typename T::shared_type;
-  using rng_state_type = typename T::rng_state_type;
-  using rng_int_type = typename rng_state_type::int_type;
+  // TODO(mjr) maybe need to keep this if we don't want to completely hardcode
+  // the rng to philox - but rename? Maybe create an rng type (not just state)
+  //using rng_state_type = typename T::rng_state_type;
+  //using rng_int_type = typename rng_state_type::int_type;
 
   // TODO: fix this elsewhere, perhaps (see also dust/dust_cpu.hpp)
   using filter_state_type = dust::filter::filter_state_device<real_type>;
 
-  dust_gpu(const pars_type& pars, const size_t time, const size_t n_particles,
-           const size_t n_threads, const std::vector<rng_int_type>& seed,
+  dust_gpu(const pars_type& pars,
+           const size_t time,
+           const size_t n_particles,
+           const size_t n_threads,
+           //const std::vector<rng_int_type>& seed,
            const gpu::gpu_config& gpu_config) :
     n_pars_(0),
     n_particles_each_(n_particles),
@@ -52,19 +57,23 @@ public:
     n_state_full_(0),
     n_state_(0),
     pars_are_shared_(true),
-    rng_state_blank_(dust::random::prng<rng_state_type>(1, 42).state(0)),
     n_threads_(n_threads),
     gpu_config_(gpu_config),
     select_needed_(true),
     select_scatter_(false),
     time_(time) {
-    initialise_device_state(std::vector<pars_type>(1, pars), seed);
+    // TODO(mjr) replace seed with key for philox? Need a way to set it (for
+    // reproducibility). Maybe at first just hardcode a key then work out a
+    // good way to set it (idea - pass key via kernel arg? only idea I can
+    // think of that would allow changing key without recompiling anything)
+    //initialise_device_state(std::vector<pars_type>(1, pars), seed);
+    initialise_device_state(std::vector<pars_type>(1, pars));
     shape_ = {n_particles};
   }
 
   dust_gpu(const std::vector<pars_type>& pars, const size_t time,
            const size_t n_particles, const size_t n_threads,
-           const std::vector<rng_int_type>& seed,
+           //const std::vector<rng_int_type>& seed,
            const std::vector<size_t>& shape,
            const gpu::gpu_config& gpu_config) :
     n_pars_(pars.size()),
@@ -73,13 +82,12 @@ public:
     n_state_full_(0), // needed for malloc size
     n_state_(0),
     pars_are_shared_(n_particles != 0),
-    rng_state_blank_(dust::random::prng<rng_state_type>(1, 42).state(0)),
     n_threads_(n_threads),
     gpu_config_(gpu_config),
     select_needed_(true),
     select_scatter_(false),
     time_(time) {
-    initialise_device_state(pars, seed);
+    initialise_device_state(pars);
     // constructing the shape here is harder than above.
     if (n_particles > 0) {
       shape_.push_back(n_particles);
@@ -255,7 +263,7 @@ public:
       // TODO(mjr) change the hardcoded number of args here when needed. Maybe
       // better (definitely safer) to just use `.push_back()` or
       // `.emplace_back()`
-      std::vector<std::vector<void *>> kernel_args(n_update_kernels, std::vector<void *>(15, nullptr));
+      std::vector<std::vector<void *>> kernel_args(n_update_kernels, std::vector<void *>(14, nullptr));
       std::vector<cudaKernelNodeParams> kernel_node_params(n_update_kernels);
 
       const size_t n_pars_effective_local = n_pars_effective();
@@ -268,27 +276,12 @@ public:
 
       void **kernels = dust::gpu::get_update_gpu_kernels<T>();
 
-      std::vector<rng_int_type *> rng_kernel;
-
-      // Count how many kernels have needed an RNG so far in the loop below.
-      // Just makes it easier to use our bool array...
-      size_t kernels_use_rng_count = 0;
-
-      bool *kernels_use_rng = dust::gpu::get_update_gpu_kernels_use_rng<T>();
-
       // Create nodes with the appropriate params (copied from the original
       // kernel launch params etc) and add them to the graph
       for (size_t k = 0; k < n_update_kernels; k += 1) {
         // TODO(mjr) make a struct for most of the kernel arguments and then
         // just pass a ptr to the struct? Also see
         // https://github.com/mrc-ide/dust/issues/319
-
-        if (kernels_use_rng[k]) {
-          rng_kernel.push_back(device_state_.rng[kernels_use_rng_count].data());
-          kernels_use_rng_count += 1;
-        } else {
-          rng_kernel.push_back(nullptr);
-        }
 
         kernel_args[k][0] = (void *) &time_start;
         kernel_args[k][1] = (void *) &d_time;
@@ -302,9 +295,8 @@ public:
         kernel_args[k][9] = (void *) &device_state_.n_shared_real;
         kernel_args[k][10] = (void *) &shared_int_local;
         kernel_args[k][11] = (void *) &shared_real_local;
-        kernel_args[k][12] = (void *) &rng_kernel[k];
-        kernel_args[k][13] = (void *) &cuda_pars_.run.shared_int;
-        kernel_args[k][14] = (void *) &cuda_pars_.run.shared_real;
+        kernel_args[k][12] = (void *) &cuda_pars_.run.shared_int;
+        kernel_args[k][13] = (void *) &cuda_pars_.run.shared_real;
 
         kernel_node_params[k] = {
           .func = (void*) kernels[k],
@@ -506,7 +498,6 @@ public:
                                       cuda_pars_,
                                       kernel_stream_,
                                       resample_stream_,
-                                      resample_rng_,
                                       device_state_,
                                       weights,
                                       scan);
@@ -525,78 +516,6 @@ public:
   dust::gpu::device_array<real_type>& device_state_selected() {
     run_select();
     return device_state_.y_selected;
-  }
-
-  // This function and set_rng_state are inverses of each other; the
-  // layout is purposefully similar.
-  std::vector<rng_int_type> rng_state() {
-    const size_t np = n_particles();
-    constexpr size_t rng_len = rng_state_type::size();
-    const size_t n_update_kernels_use_rng = dust::gpu::get_num_update_gpu_kernels_use_rng<model_type>();
-
-    std::vector<std::vector<rng_int_type>> rng_interleaved(
-      n_update_kernels_use_rng,
-      std::vector<rng_int_type>(np * rng_len)
-    );
-
-    // Pull from device
-
-    for (size_t k = 0; k < n_update_kernels_use_rng; ++k) {
-      device_state_.rng[k].get_array(rng_interleaved[k]);
-    }
-
-    // De-interleaved RNG state, copied from rng_interleaved, +1 is host rng
-    std::vector<rng_int_type> rng_state((np * n_update_kernels_use_rng + 1) * rng_len);
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static) num_threads(n_threads_)
-#endif
-    for (size_t k = 0; k < n_update_kernels_use_rng; ++k) {
-      for (size_t i = 0; i < np; ++i) {
-        for (size_t j = 0; j < rng_len; ++j) {
-          rng_state[j + i * rng_len + k * rng_len * np] = rng_interleaved[k][i + j * np];
-        }
-      }
-    }
-
-    // Add the (host) resample state on the end
-    for (size_t j = 0; j < rng_len; ++j) {
-      rng_state[np * rng_len * n_update_kernels_use_rng + j] = resample_rng_[j];
-    }
-
-    return rng_state;
-  }
-
-  void set_rng_state(const std::vector<rng_int_type>& rng_state) {
-    const size_t np = n_particles();
-    constexpr size_t rng_len = rng_state_type::size();
-    const size_t n_update_kernels_use_rng = dust::gpu::get_num_update_gpu_kernels_use_rng<model_type>();
-
-    // Interleaved RNG state copied from rng_state
-    std::vector<std::vector<rng_int_type>> rng_interleaved(
-      n_update_kernels_use_rng,
-      std::vector<rng_int_type>(np * rng_len)
-    );
-
-#ifdef _OPENMP
-      #pragma omp parallel for schedule(static) num_threads(n_threads_)
-#endif
-    for (size_t k = 0; k < n_update_kernels_use_rng; ++k) {
-      for (size_t i = 0; i < np; ++i) {
-        for (size_t j = 0; j < rng_len; ++j) {
-          rng_interleaved[k][i + j * np] = rng_state[j + i * rng_len + k * rng_len * np];
-        }
-      }
-    }
-
-    // Push onto device
-    for (size_t k = 0; k < n_update_kernels_use_rng; ++k) {
-      device_state_.rng[k].set_array(rng_interleaved[k]);
-    }
-
-    // This also imports the resample RNG, which is on the host
-    for (size_t j = 0; j < rng_len; ++j) {
-      resample_rng_[j] = rng_state[np * rng_len * n_update_kernels_use_rng + j];
-    }
   }
 
   void set_n_threads(size_t n_threads) {
@@ -648,9 +567,6 @@ public:
                      device_state_.shared_int.data(),
                      device_state_.shared_real.data(),
                      device_data_.data() + data_offset,
-                     // TODO(mjr) this passes the RNG state for the first update kernel as a quick "fix"
-                     // What's the right thing to do here? Use a separate RNG for compare?
-                     device_state_.rng[0].data(),
                      cuda_pars_.compare.shared_int,
                      cuda_pars_.compare.shared_real,
                      data_is_shared_);
@@ -670,8 +586,6 @@ public:
                      device_state_.shared_int.data(),
                      device_state_.shared_real.data(),
                      device_data_.data() + data_offset,
-                     // TODO(mjr) see above
-                     device_state_.rng[0].data(),
                      use_shared_int,
                      use_shared_real,
                      data_is_shared_);
@@ -690,16 +604,19 @@ private:
   size_t n_state_full_; // State size of a particle
   size_t n_state_; // State size of a particle with an index
   const bool pars_are_shared_; // Does the n_particles dimension exist in shape?
-  const rng_state_type rng_state_blank_;
 
   std::vector<size_t> shape_; // shape of output
   size_t n_threads_;
-  rng_state_type resample_rng_; // for the filter
+  // TODO(mjr) maybe replace with a semi-magic index (n_kernels + 1 for that component of the index tuple?)
+  // Wouldn't need to store it here though - just need to also change odin.dust
+  // to use this index. Maybe similar applies elsewhere? Are there any other
+  // "extra" RNGs anywhere?
+  //rng_state_type resample_rng_; // for the filter
   gpu::gpu_config gpu_config_;
 
   // GPU support
   dust::gpu::launch_control_dust cuda_pars_;
-  dust::gpu::device_state<real_type, rng_state_type> device_state_;
+  dust::gpu::device_state<real_type> device_state_;
   dust::gpu::device_array<data_type> device_data_;
   std::map<size_t, size_t> device_data_offsets_;
   dust::gpu::cuda_stream kernel_stream_;
@@ -720,8 +637,7 @@ private:
   // Set can be called multiple times, sets device memory from host
 
   // Sets state from model + pars, called from the constructors
-  void initialise_device_state(const std::vector<pars_type>& pars,
-                               const std::vector<rng_int_type>& seed) {
+  void initialise_device_state(const std::vector<pars_type>& pars) {
     if (n_state_full_ == 0) {
       auto r = rng_state_blank_;
       // TODO: it would be nice to enforce that the rng was not
@@ -737,14 +653,6 @@ private:
     initialise_device_memory(pars[0].shared);
     set_device_shared(pars);
     set_state_from_pars(pars);
-
-    // Set GPU RNG from a seed; primary reason for this construction
-    // is to expand out seed correctly (e.g., it might be a 4-element
-    // vector on first creation).
-    const size_t n_update_kernels_use_rng =
-      dust::gpu::get_num_update_gpu_kernels_use_rng<model_type>();
-    dust::random::prng<rng_state_type> rng(n_particles_total_ * n_update_kernels_use_rng + 1, seed);
-    set_rng_state(rng.export_state());
 
     set_cuda_launch();
 
@@ -765,19 +673,16 @@ private:
     const size_t n_internal_real = dust::gpu::internal_real_size<T>(s);
     const size_t n_shared_int = dust::gpu::shared_int_size<T>(s);
     const size_t n_shared_real = dust::gpu::shared_real_size<T>(s);
-    const size_t n_update_kernels_use_rng =
-      dust::gpu::get_num_update_gpu_kernels_use_rng<model_type>();
     device_state_.initialise(n_particles_total_, n_state_full_, n_pars,
                              n_internal_int, n_internal_real,
-                             n_shared_int, n_shared_real, n_update_kernels_use_rng);
+                             n_shared_int, n_shared_real);
   }
 
   void set_device_shared(const std::vector<pars_type>& pars) {
     size_t n = n_particles() == 0 ? 0 : n_state_full();
     std::vector<dust::particle<T>> p;
-    auto r = dust::random::prng<rng_state_type>(1, 1);
     for (size_t i = 0; i < n_pars_effective(); ++i) {
-      p.push_back(dust::particle<T>(pars[i], time_, r.state(0)));
+      p.push_back(dust::particle<T>(pars[i], time_));
       if (n > 0 && p.back().size() != n) {
         std::stringstream msg;
         msg << "'pars' created inconsistent state size: " <<
@@ -822,8 +727,7 @@ private:
 #endif
     for (size_t i = 0; i < n_pars; ++i) {
       for (size_t j = 0; j < n_particles(); ++j) {
-        auto r = rng_state_blank_;
-        dust::particle<T> p(pars[i], time_, r);
+        dust::particle<T> p(pars[i], time_);
         p.state_full(state_host[i * n_particles() + j].begin());
       }
     }
