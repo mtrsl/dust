@@ -17,6 +17,8 @@
 
 namespace dust {
 
+// TODO(mjr) See comments about passing rng indices instead of states in
+// dust_cpu class. Structure is basically identical here
 template <typename T>
 class dust_ode {
 public:
@@ -25,20 +27,17 @@ public:
   using time_type = real_type;
   using data_type = typename T::data_type;
   using pars_type = dust::pars_type<T>;
-  using rng_state_type = typename T::rng_state_type;
-  using rng_int_type = typename rng_state_type::int_type;
   using filter_state_type = dust::filter::filter_state_host<real_type>;
 
   dust_ode(const pars_type &pars, const time_type time,
            const size_t n_particles, const size_t n_threads,
-           const ode::control<real_type> ctl, const std::vector<rng_int_type>& seed,
+           const ode::control<real_type> ctl,
            bool deterministic)
     : n_pars_(0),
       n_particles_each_(n_particles),
       n_particles_total_(n_particles),
       pars_are_shared_(true),
       n_threads_(n_threads),
-      rng_(n_particles_total_ + 1, seed, deterministic), // +1 for filter
       errors_(n_particles),
       control_(ctl) {
     initialise(pars, time, true);
@@ -48,7 +47,7 @@ public:
 
   dust_ode(const std::vector<pars_type>& pars, const time_type time,
            const size_t n_particles, const size_t n_threads,
-           const ode::control<real_type> ctl, const std::vector<rng_int_type>& seed,
+           const ode::control<real_type> ctl,
            bool deterministic,
            const std::vector<size_t>& shape)
     : n_pars_(pars.size()),
@@ -56,7 +55,6 @@ public:
       n_particles_total_(n_particles_each_ * pars.size()),
       pars_are_shared_(n_particles != 0),
       n_threads_(n_threads),
-      rng_(n_particles_total_ + 1, seed, deterministic),  // +1 for filter
       errors_(n_particles_total_),
       control_(ctl) {
     initialise(pars, time, true);
@@ -158,7 +156,7 @@ public:
 #endif
     for (size_t i = 0; i < solver_.size(); ++i) {
       try {
-        solver_[i].solve(time_end, rng_.state(i));
+        solver_[i].solve(time_end));
       } catch (std::exception const& e) {
         errors_.capture(e, i);
       }
@@ -176,7 +174,7 @@ public:
     for (size_t i = 0; i < solver_.size(); ++i) {
       try {
         for (size_t t = 0; t < n_time; ++t) {
-          solver_[i].solve(time_end[t], rng_.state(i));
+          solver_[i].solve(time_end[t]));
           size_t offset = t * n_state() * n_particles() + i * n_state();
           solver_[i].state(index_, ret.begin() + offset);
         }
@@ -298,7 +296,7 @@ public:
   void resample(const std::vector<real_type>& weights,
                 std::vector<size_t>& index) {
     dust::filter::resample_index(weights, n_pars_, n_particles_each_, n_threads_,
-                                 index, rng_.state(n_particles_total_));
+                                 index);
     reorder(index);
   }
 
@@ -334,14 +332,6 @@ public:
     errors_.reset();
   }
 
-  std::vector<typename rng_state_type::int_type> rng_state() {
-    return rng_.export_state();
-  }
-
-  void set_rng_state(const std::vector<typename rng_state_type::int_type>& rng_state) {
-    rng_.import_state(rng_state);
-  }
-
   void set_data(std::map<size_t, std::vector<data_type>> data,
                 bool data_is_shared) {
     data_ = data;
@@ -365,7 +355,7 @@ public:
 #endif
     for (size_t i = 0; i < solver_.size(); ++i) {
       const size_t j = data_is_shared_ ? 0 : i / np;
-      res[i] = solver_[i].compare_data(data[j], rng_.state(i));
+      res[i] = solver_[i].compare_data(data[j]));
     }
   }
 
@@ -380,7 +370,7 @@ private:
   const bool pars_are_shared_; // Does the n_particles dimension exist in shape?
   std::vector<size_t> shape_; // shape of output
   size_t n_threads_;
-  dust::random::prng<rng_state_type> rng_;
+  dust::random::prng rng_;
   std::map<size_t, std::vector<data_type>> data_;
   bool data_is_shared_;
   dust::utils::openmp_errors errors_;
@@ -394,8 +384,7 @@ private:
     if (solver_.empty()) {
       solver_.reserve(n_particles_total_);
       for (size_t i = 0 ; i < n_particles_total_; ++i) {
-        solver_.push_back(dust::ode::solver<model_type>(m, time, control_,
-                                                        rng_.state(i)));
+        solver_.push_back(dust::ode::solver<model_type>(m, time, control_));
       }
     } else {
       errors_.reset();
@@ -404,7 +393,7 @@ private:
 #endif
       for (size_t i = 0; i < n_particles_total_; ++i) {
         try {
-          solver_[i].set_model(m, set_state, rng_.state(i));
+          solver_[i].set_model(m, set_state);
         } catch (std::exception const& e) {
           errors_.capture(e, i);
         }
@@ -423,8 +412,7 @@ private:
     if (solver_.empty()) {
       for (size_t i = 0; i < n_particles_total_; ++i) {
         const size_t j = i / n_particles_each_;
-        solver_.push_back(dust::ode::solver<model_type>(m[j], time, control_,
-                                                        rng_.state(i)));
+        solver_.push_back(dust::ode::solver<model_type>(m[j], time, control_));
       }
     } else {
       errors_.reset();
@@ -434,7 +422,7 @@ private:
       for (size_t i = 0; i < n_particles_total_; ++i) {
         try {
           const size_t j = i / n_particles_each_;
-          solver_[i].set_model(m[j], set_state, rng_.state(i));
+          solver_[i].set_model(m[j], set_state);
         } catch (std::exception const& e) {
           errors_.capture(e, i);
         }
