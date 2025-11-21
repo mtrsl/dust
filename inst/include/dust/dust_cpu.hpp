@@ -33,30 +33,31 @@ public:
   using data_type = typename T::data_type;
   using internal_type = typename T::internal_type;
   using shared_type = typename T::shared_type;
-  using rng_state_type = typename T::rng_state_type;
-  using rng_int_type = typename rng_state_type::int_type;
 
   // TODO: fix this elsewhere, perhaps (see also cuda/dust_gpu.hpp)
   using filter_state_type = dust::filter::filter_state_host<real_type>;
 
-  dust_cpu(const pars_type& pars, const time_type time, const size_t n_particles,
-           const size_t n_threads, const std::vector<rng_int_type>& seed,
+  dust_cpu(const pars_type& pars,
+           const time_type time,
+           const size_t n_particles,
+           const size_t n_threads,
            const bool deterministic) :
     n_pars_(0),
     n_particles_each_(n_particles),
     n_particles_total_(n_particles),
     pars_are_shared_(true),
     n_threads_(n_threads),
-    rng_(n_particles_total_ + 1, seed, deterministic), // +1 for filter
+    rng_(n_particles_total_ + 1, deterministic), // +1 for filter
     errors_(n_particles_total_) {
     initialise(pars, time, true);
     initialise_index();
     shape_ = {n_particles};
   }
 
-  dust_cpu(const std::vector<pars_type>& pars, const time_type time,
-           const size_t n_particles, const size_t n_threads,
-           const std::vector<rng_int_type>& seed,
+  dust_cpu(const std::vector<pars_type>& pars,
+           const time_type time,
+           const size_t n_particles,
+           const size_t n_threads,
            const bool deterministic,
            const std::vector<size_t>& shape) :
     n_pars_(pars.size()),
@@ -64,7 +65,7 @@ public:
     n_particles_total_(n_particles_each_ * pars.size()),
     pars_are_shared_(n_particles != 0),
     n_threads_(n_threads),
-    rng_(n_particles_total_ + 1, seed, deterministic),  // +1 for filter
+    rng_(n_particles_total_ + 1, deterministic),  // +1 for filter
     errors_(n_particles_total_) {
     initialise(pars, time, true);
     initialise_index();
@@ -83,33 +84,6 @@ public:
 
   void set_pars(const std::vector<pars_type>& pars, bool set_state) {
     initialise(pars, time(), set_state);
-  }
-
-  // It's the callee's responsibility to ensure this is the correct length:
-  //
-  // * if is_matrix is false then state must be length n_state_full()
-  //   and all particles get the state
-  // * if is_matrix is true, state must be length (n_state_full() *
-  //   n_particles()) and every particle gets a different state.
-  void set_state(const std::vector<real_type>& state,
-                 const std::vector<size_t>& index) {
-    const size_t n_particles = particles_.size();
-    const bool use_index = index.size() > 0;
-    const size_t n_state = use_index ? index.size() : n_state_full();
-    const bool individual = state.size() == n_state * n_particles;
-    const size_t n = individual ? 1 : n_particles_each_;
-    auto it = state.begin();
-#ifdef _OPENMP
-    #pragma omp parallel for schedule(static) num_threads(n_threads_)
-#endif
-    for (size_t i = 0; i < n_particles; ++i) {
-      const auto it_i = it + (i / n) * n_state;
-      if (use_index) {
-        particles_[i].set_state(it_i, index);
-      } else {
-        particles_[i].set_state(it_i);
-      }
-    }
   }
 
   void set_time(const time_type time) {
@@ -134,7 +108,12 @@ public:
 #endif
     for (size_t i = 0; i < particles_.size(); ++i) {
       try {
-        particles_[i].run(time_end, rng_.state(i));
+        // TODO(mjr) need to replace the now-removed state arg with a counter
+        // or required indices?
+        // Might need to keep track of how many times the model is run, count
+        // time steps done, etc to be able to calculate the ctr - similar to
+        // gpu class
+        particles_[i].run(time_end, i);
       } catch (std::exception const& e) {
         errors_.capture(e, i);
       }
@@ -152,7 +131,7 @@ public:
     for (size_t i = 0; i < particles_.size(); ++i) {
       try {
         for (size_t t = 0; t < n_time; ++t) {
-          particles_[i].run(time_end[t], rng_.state(i));
+          particles_[i].run(time_end[t]);
           size_t offset = t * n_state() * n_particles() + i * n_state();
           particles_[i].state(index_, ret.begin() + offset);
         }
@@ -247,8 +226,8 @@ public:
 
   void resample(const std::vector<real_type>& weights,
                 std::vector<size_t>& index) {
-    dust::filter::resample_index(weights, n_pars_, n_particles_each_, n_threads_,
-                                 index, rng_.state(n_particles_total_));
+    // TODO(mjr) Also re-add an arg for the rng index (resample rng was the +1 one)
+    dust::filter::resample_index(weights, n_pars_, n_particles_each_, n_threads_, index);
     reorder(index);
   }
 
@@ -310,14 +289,6 @@ public:
     errors_.reset();
   }
 
-  std::vector<rng_int_type> rng_state() {
-    return rng_.export_state();
-  }
-
-  void set_rng_state(const std::vector<rng_int_type>& rng_state) {
-    rng_.import_state(rng_state);
-  }
-
   void set_n_threads(size_t n_threads) {
     n_threads_ = n_threads;
   }
@@ -349,7 +320,9 @@ public:
 #endif
     for (size_t i = 0; i < particles_.size(); ++i) {
       const size_t j = data_is_shared_ ? 0 : i / np;
-      res[i] = particles_[i].compare_data(data[j], rng_.state(i));
+      // TODO(mjr) which rng index to pass to compare_data (when these args get
+      // added)? It was previously passing rng_.state(i)
+      res[i] = particles_[i].compare_data(data[j]);
     }
   }
 
@@ -364,7 +337,7 @@ private:
   const bool pars_are_shared_; // Does the n_particles dimension exist in shape?
   std::vector<size_t> shape_; // shape of output
   size_t n_threads_;
-  dust::random::prng<rng_state_type> rng_;
+  dust::random::prng rng_;
   std::map<size_t, std::vector<data_type>> data_;
   bool data_is_shared_;
   dust::utils::openmp_errors errors_;
@@ -378,7 +351,7 @@ private:
       // https://stackoverflow.com/questions/18669296/c-openmp-parallel-for-loop-alternatives-to-stdvector
       particles_.reserve(n_particles_total_);
       for (size_t i = 0; i < n_particles_total_; ++i) {
-        particles_.push_back(dust::particle<T>(pars, time, rng_.state(i)));
+        particles_.push_back(dust::particle<T>(pars, time));
       }
     } else {
       errors_.reset();
@@ -387,7 +360,7 @@ private:
 #endif
       for (size_t i = 0; i < n_particles_total_; ++i) {
         try {
-          particles_[i].set_pars(pars, time, set_state, rng_.state(i));
+          particles_[i].set_pars(pars, time, set_state);
         } catch (std::exception const& e) {
           errors_.capture(e, i);
         }
@@ -403,7 +376,7 @@ private:
       particles_.reserve(n_particles_total_);
       for (size_t i = 0; i < n_particles_total_; ++i) {
         const size_t j = i / n_particles_each_;
-        particles_.push_back(dust::particle<T>(pars[j], time, rng_.state(i)));
+        particles_.push_back(dust::particle<T>(pars[j], time));
       }
       const auto n = n_state_full();
       for (size_t j = 1; j < n_pars_; ++j) {
@@ -424,7 +397,7 @@ private:
       for (size_t i = 0; i < n_particles_total_; ++i) {
         try {
           const size_t j = i / n_particles_each_;
-          particles_[i].set_pars(pars[j], time, set_state, rng_.state(i));
+          particles_[i].set_pars(pars[j], time, set_state);
         } catch (std::exception const& e) {
           errors_.capture(e, i);
         }
