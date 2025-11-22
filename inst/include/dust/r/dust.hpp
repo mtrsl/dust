@@ -21,7 +21,6 @@
 #include "dust/r/gpu.hpp"
 #include "dust/r/helpers.hpp"
 #include "dust/r/helpers_ode.hpp"
-#include "dust/r/random.hpp"
 
 namespace dust {
 namespace r {

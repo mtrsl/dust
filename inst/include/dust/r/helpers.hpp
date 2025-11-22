@@ -10,7 +10,6 @@
 #include <cpp11/list.hpp>
 #include <cpp11/strings.hpp>
 
-#include "dust/r/random.hpp"
 #include "dust/r/utils.hpp"
 
 namespace dust {
