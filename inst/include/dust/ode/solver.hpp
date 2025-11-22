@@ -15,15 +15,13 @@ namespace ode {
 template <typename Model>
 class solver {
 public:
-  using rng_state_type = typename Model::rng_state_type;
   using real_type = typename Model::real_type;
 
-  solver(Model m, real_type t, control<real_type> ctl,
-         rng_state_type& rng_state) :
+  solver(Model m, real_type t, control<real_type> ctl) :
     t_(t),
     ctl_(ctl),
     last_error_(0),
-    stepper_(m, t, rng_state),
+    stepper_(m, t),
     n_variables_(m.n_variables()),
     n_output_(m.n_output()) {
     statistics_.reset();
@@ -106,7 +104,7 @@ public:
     return t_;
   }
 
-  void solve(real_type t_end, rng_state_type& rng_state) {
+  void solve(real_type t_end) {
     // TODO: we can tidy this bit of bookkeeping up later once it's
     // correct; it should be possible to hold a pointer to where we
     // are, and update it when doing set_time()
@@ -114,7 +112,7 @@ public:
     auto it = std::lower_bound(stochastic_schedule_.begin(), end, t_);
     while (t_ < t_end) {
       if (it != end && *it == t_) {
-        stepper_.update_stochastic(t_, rng_state);
+        stepper_.update_stochastic(t_);
         ++it;
       }
       const real_type t_next = it == end ? t_end : std::min(*it, t_end);
@@ -169,7 +167,7 @@ public:
     statistics_ = statistics_swap_;
   }
 
-  void set_model(Model m, bool set_initial_state, rng_state_type& rng_state) {
+  void set_model(Model m, bool set_initial_state) {
     const auto m_size = m.n_variables() + m.n_output();
     const auto curr_size = n_variables() + n_output();
     if (m_size != curr_size) {
@@ -180,7 +178,7 @@ public:
       throw std::invalid_argument(msg.str());
     }
     if (set_initial_state) {
-      stepper_.set_model(m, t_, rng_state);
+      stepper_.set_model(m, t_);
     } else {
       stepper_.set_model(m);
     }
@@ -199,8 +197,8 @@ public:
     stepper_.state(t_, end_state);
   }
 
-  real_type compare_data(const typename Model::data_type& data, rng_state_type& rng_state) {
-    return stepper_.compare_data(data, rng_state);
+  real_type compare_data(const typename Model::data_type& data) {
+    return stepper_.compare_data(data);
   }
 
   std::vector<size_t>::iterator
