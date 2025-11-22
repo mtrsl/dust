@@ -74,11 +74,12 @@ adjoint(particle<T> particle,
   // type must be size_t anyway, so this is fine.
   using time_type = size_t;
 
-  typename T::rng_state_type rng_state;
-  rng_state.deterministic = true;
-  for (size_t i = 0; i < T::rng_state_type::size(); ++i) {
-    rng_state[i] = 0;
-  }
+  // TODO(mjr) replace this (dummy?) rng state with a dummy counter?
+  //typename T::rng_state_type rng_state;
+  //rng_state.deterministic = true;
+  //for (size_t i = 0; i < T::rng_state_type::size(); ++i) {
+    //rng_state[i] = 0;
+  //}
 
   auto d_start = data.begin();
   auto d_end = data.end();
@@ -115,7 +116,7 @@ adjoint(particle<T> particle,
 
   // We might not do this bit, generally, but instead take the initial
   // state from elsewhere (model.state() contains what we need here).
-  const auto state_initial = model.initial(time_start, rng_state);
+  const auto state_initial = model.initial(time_start);
   std::copy_n(state_initial.begin(), n_state, state_curr);
 
   auto d = data.begin();
@@ -125,12 +126,12 @@ adjoint(particle<T> particle,
   real_type ll = 0;
   while (d != d_end) {
     while (time < d->first) {
-      model.update(time, state_curr, rng_state, state_next);
+      model.update(time, state_curr, state_next);
       state_curr = state_next;
       state_next += n_state;
       ++time;
     }
-    ll += model.compare_data(state_curr, d->second[0], rng_state);
+    ll += model.compare_data(state_curr, d->second[0]);
     ++d;
   }
 
