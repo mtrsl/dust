@@ -25,6 +25,12 @@ public:
   /// Array of state
   int_type state[4];
 
+  // TODO(mjr) store key here? Might make sense, then we can just pass an
+  // object of this class to the actual rng functions which should be
+  // compatible with their templated definitions? All rng calls will eventually
+  // call next and that's the only place where the key actually matters (as
+  // it's where the actual, raw rng draws are done)
+
   /// This flag indicates that the distributions should return the
   /// deterministic expectation of the draw, and not use any random
   /// numbers
@@ -55,19 +61,6 @@ public:
 
 
 // Implementation of RNG interface functions
-
-// Hopefully the `if constexpr (T::counter_based)` in `jump` etc means we don't
-// need to implement these at all
-
-//template <>
-//constexpr std::array<uint32_t, 0> jump_constants<philox4x32_10>() {
-  //return std::array<uint32_t, 0>{};
-//}
-
-//template <>
-//constexpr std::array<uint32_t, 0> long_jump_constants<philox4x32_10>() {
-  //return std::array<uint32_t, 0>{};
-//}
 
 template <>
 inline __host__ __device__ uint32_t next(philox4x32_10& state) {

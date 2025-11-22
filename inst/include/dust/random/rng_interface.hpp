@@ -12,12 +12,6 @@ namespace random {
 template <typename T>
 typename T::int_type next(T& state);
 
-template <typename T>
-std::array<typename T::int_type, T::size()> jump_constants();
-
-template <typename T>
-std::array<typename T::int_type, T::size()> long_jump_constants();
-
 }
 }
 
