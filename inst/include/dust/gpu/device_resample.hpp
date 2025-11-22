@@ -9,15 +9,14 @@ namespace dust {
 
 namespace filter {
 
-template <typename real_type, typename rng_state_type>
+template <typename real_type>
 void run_device_resample(const size_t n_particles,
                          const size_t n_pars,
                          const size_t n_state,
                          const dust::gpu::launch_control_dust& cuda_pars,
                          dust::gpu::cuda_stream& kernel_stream,
                          dust::gpu::cuda_stream& resample_stream,
-                         rng_state_type& resample_rng,
-                         dust::gpu::device_state<real_type, rng_state_type>& device_state,
+                         dust::gpu::device_state<real_type>& device_state,
                          dust::gpu::device_array<real_type>& weights,
                          dust::gpu::device_scan_state<real_type>& scan) {
 #ifdef __NVCC__
@@ -46,7 +45,8 @@ void run_device_resample(const size_t n_particles,
     // Generate random numbers for each parameter set
     std::vector<real_type> shuffle_draws(n_pars);
     for (size_t i = 0; i < n_pars; ++i) {
-      shuffle_draws[i] = dust::random::uniform<real_type>(resample_rng, 0, 1);
+      // TODO(mjr) replace (removed) rng_state with ctr
+      shuffle_draws[i] = dust::random::uniform<real_type>(0, 1);
     }
     const bool async_copy = true;
     device_state.resample_u.set_array(shuffle_draws.data(),

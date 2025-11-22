@@ -633,13 +633,10 @@ cpp11::sexp dust_capabilities() {
   bool compare = !std::is_same<dust::no_data, typename T::data_type>::value;
   using real_type = typename T::real_type;
   auto real_size = sizeof(real_type);
-  //auto rng_algorithm =
-    //dust::random::r::algorithm_name<typename T::rng_state_type>();
   auto time_type = dust_time_type<typename T::time_type>();
   return cpp11::writable::list({"openmp"_nm = openmp,
                                 "compare"_nm = compare,
                                 "gpu"_nm = gpu,
-                                //"rng_algorithm"_nm = rng_algorithm,
                                 "time_type"_nm = time_type,
                                 "real_size"_nm = real_size * CHAR_BIT});
 }

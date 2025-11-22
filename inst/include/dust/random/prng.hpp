@@ -22,6 +22,8 @@ public:
   /// jumping
   ///
   /// @param seed A vector of integers to seed the generator with
+  // TODO(mjr) maybe delete the n param here? But also, maybe just delete the
+  // whole class as it does nothing
   prng(const size_t n, const bool deterministic = false)
     : deterministic_{deterministic}
   {
