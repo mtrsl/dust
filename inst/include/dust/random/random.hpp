@@ -27,12 +27,12 @@ struct default_rng_helper;
 
 template <>
 struct default_rng_helper<double> {
-  using type = xoshiro256plus;
+  using type = philox4x32_10;
 };
 
 template <>
 struct default_rng_helper<float> {
-  using type = xoshiro128plus;
+  using type = philox4x32_10;
 };
 
 }
