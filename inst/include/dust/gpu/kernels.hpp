@@ -25,16 +25,6 @@ size_t get_num_update_gpu_dependencies();
 template <typename T>
 size_t (*get_update_gpu_dependencies())[2];
 
-// Get the array of booleans indicating whether each kernel requires an RNG
-template <typename T>
-bool *get_update_gpu_kernels_use_rng();
-
-// Get the number of kernels that require an RNG
-// Could work this out from the array by counting how many `true` entries there
-// are but this is nicer
-template <typename T>
-size_t get_num_update_gpu_kernels_use_rng();
-
 template <typename T>
 __device__
 typename T::real_type compare_gpu(
@@ -43,8 +33,7 @@ typename T::real_type compare_gpu(
                    interleaved<int> internal_int,
                    interleaved<typename T::real_type> internal_real,
                    const int * shared_int,
-                   const typename T::real_type * shared_real,
-                   typename T::rng_state_type& rng_state);
+                   const typename T::real_type * shared_real);
 
 // __global__ for shuffling particles
 template <typename real_type>
@@ -102,14 +91,11 @@ __global__
                          const int * shared_int,
                          const typename T::real_type * shared_real,
                          const typename T::data_type * data,
-                         typename T::rng_state_type::int_type * rng_state,
                          bool use_shared_int,
                          bool use_shared_real,
                          bool data_is_shared) {
   // This setup is mostly shared with run_particles
   using real_type = typename T::real_type;
-  using rng_state_type = typename T::rng_state_type;
-  using rng_int_type = typename rng_state_type::int_type;
   const size_t n_particles_each = n_particles / n_pars;
 
 #ifdef __CUDA_ARCH__
@@ -163,18 +149,14 @@ __global__
     interleaved<real_type> p_state(state, i, n_particles);
     interleaved<int> p_internal_int(internal_int, i, n_particles);
     interleaved<real_type> p_internal_real(internal_real, i, n_particles);
-    interleaved<rng_int_type> p_rng(rng_state, i, n_particles);
-    rng_state_type rng_block = get_rng_state<rng_state_type>(p_rng);
 
     weights[i] = compare_gpu<T>(p_state,
                                 *shared_state.data,
                                 p_internal_int,
                                 p_internal_real,
                                 shared_state.shared_int,
-                                shared_state.shared_real,
-                                rng_block);
+                                shared_state.shared_real);
     SYNCWARP
-    put_rng_state(rng_block, p_rng);
   }
 }
 
