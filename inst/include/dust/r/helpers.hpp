@@ -543,7 +543,6 @@ struct dust_inputs {
   time_type time;
   size_t n_particles;
   size_t n_threads;
-  std::vector<typename T::rng_state_type::int_type> seed;
   std::vector<size_t> shape;
   cpp11::sexp info;
 };
@@ -551,12 +550,10 @@ struct dust_inputs {
 template <typename T, typename time_type>
 dust_inputs<T, time_type> process_inputs_single(cpp11::list r_pars, cpp11::sexp r_time,
                                                 cpp11::sexp r_n_particles,
-                                                int n_threads, cpp11::sexp r_seed) {
+                                                int n_threads) {
   const time_type t0 = 0;
   const time_type time = dust::r::validate_time<time_type>(r_time, t0, "time");
   dust::r::validate_positive(n_threads, "n_threads");
-  std::vector<typename T::rng_state_type::int_type> seed =
-    dust::random::r::as_rng_seed<typename T::rng_state_type>(r_seed);
 
   std::vector<dust::pars_type<T>> pars;
   pars.push_back(dust::dust_pars<T>(r_pars));
@@ -570,7 +567,6 @@ dust_inputs<T, time_type> process_inputs_single(cpp11::list r_pars, cpp11::sexp 
     time,
     static_cast<size_t>(n_particles),
     static_cast<size_t>(n_threads),
-    seed,
     shape,
     info
   };
@@ -579,13 +575,11 @@ dust_inputs<T, time_type> process_inputs_single(cpp11::list r_pars, cpp11::sexp 
 template <typename T, typename time_type>
 dust_inputs<T, time_type> process_inputs_multi(cpp11::list r_pars, cpp11::sexp r_time,
                                     cpp11::sexp r_n_particles,
-                                    int n_threads, cpp11::sexp r_seed) {
+                                    int n_threads) {
   const time_type t0 = 0;
   const time_type time = dust::r::validate_time<time_type>(r_time, t0, "time");
 
   dust::r::validate_positive(n_threads, "n_threads");
-  std::vector<typename T::rng_state_type::int_type> seed =
-    dust::random::r::as_rng_seed<typename T::rng_state_type>(r_seed);
 
   dust::r::check_pars_multi(r_pars);
   std::vector<dust::pars_type<T>> pars;
@@ -614,7 +608,6 @@ dust_inputs<T, time_type> process_inputs_multi(cpp11::list r_pars, cpp11::sexp r
     time,
     static_cast<size_t>(n_particles),
     static_cast<size_t>(n_threads),
-    seed,
     shape,
     info};
 }
