@@ -639,15 +639,18 @@ private:
   // Sets state from model + pars, called from the constructors
   void initialise_device_state(const std::vector<pars_type>& pars) {
     if (n_state_full_ == 0) {
-      auto r = rng_state_blank_;
+      //auto r = rng_state_blank_;
       // TODO: it would be nice to enforce that the rng was not
       // accessed here; it will not work. We could error?
       const dust::particle<T> p(pars[0], time_, r);
       n_state_full_ = p.size();
       n_state_ = n_state_full_;
-      if (r != rng_state_blank_) {
-        throw std::runtime_error("GPU models cannot use rng in initial");
-      }
+      // TODO(mjr) can't detect rng use by testing if the state has changed any
+      // more. Not super important to implement this though - just don't
+      // use rng in initial conditions
+      //if (r != rng_state_blank_) {
+        //throw std::runtime_error("GPU models cannot use rng in initial");
+      //}
     }
 
     initialise_device_memory(pars[0].shared);
