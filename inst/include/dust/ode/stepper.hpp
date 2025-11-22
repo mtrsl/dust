@@ -15,15 +15,16 @@ template <typename Model>
 class stepper {
 public:
   using real_type = typename Model::real_type;
-  using rng_state_type = typename Model::rng_state_type;
 
-  stepper(Model m, real_type t, rng_state_type& rng_state) :
+  // TODO(mjr) this (and a few other fns in this class) should probably now
+  // take an rng counter to replace the rng_state
+  stepper(Model m, real_type t) :
     m(m), n_var(m.n_variables()), n_out(m.n_output()),
     y(n_var), y_next(n_var), y_stiff(n_var), k1(n_var),
     k2(n_var), k3(n_var), k4(n_var),
     k5(n_var), k6(n_var), output(n_out),
     needs_initialise(true) {
-    const auto y = m.initial(t, rng_state);
+    const auto y = m.initial(t);
     set_state(y.begin());
   }
 
@@ -117,21 +118,21 @@ public:
     needs_initialise = true;
   }
 
-  void set_model(Model new_model, real_type t, rng_state_type& rng_state) {
+  void set_model(Model new_model, real_type t) {
     m = new_model;
-    const auto y = m.initial(t, rng_state);
+    const auto y = m.initial(t);
     set_state(y.begin());
     needs_initialise = true;
   }
 
-  void update_stochastic(real_type t, rng_state_type& rng_state) {
+  void update_stochastic(real_type t) {
     // Slightly odd construction here - we copy y into y_next so that
     // they both hold the same values, then do the step to update from
     // y_next to y so that at the end of this step 'y' holds the
     // current values (and then the derivative calculation in
     // initialise works as expected).
     std::copy_n(y.begin(), n_var, y_next.begin()); // from y to y_next
-    m.update_stochastic(t, y_next, rng_state, y);  // from y_next to y
+    m.update_stochastic(t, y_next, y);  // from y_next to y
     needs_initialise = true;
   }
 
@@ -184,9 +185,8 @@ public:
     return initial_step_size(m, t, y, ctl);
   }
 
-  real_type compare_data(const typename Model::data_type& data,
-                      rng_state_type& rng_state) {
-    return m.compare_data(y.data(), data, rng_state);
+  real_type compare_data(const typename Model::data_type& data) {
+    return m.compare_data(y.data(), data);
   }
 
 private:
