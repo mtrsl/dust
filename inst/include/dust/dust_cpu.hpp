@@ -86,6 +86,33 @@ public:
     initialise(pars, time(), set_state);
   }
 
+  // It's the callee's responsibility to ensure this is the correct length:
+  //
+  // * if is_matrix is false then state must be length n_state_full()
+  //   and all particles get the state
+  // * if is_matrix is true, state must be length (n_state_full() *
+  //   n_particles()) and every particle gets a different state.
+  void set_state(const std::vector<real_type>& state,
+                 const std::vector<size_t>& index) {
+    const size_t n_particles = particles_.size();
+    const bool use_index = index.size() > 0;
+    const size_t n_state = use_index ? index.size() : n_state_full();
+    const bool individual = state.size() == n_state * n_particles;
+    const size_t n = individual ? 1 : n_particles_each_;
+    auto it = state.begin();
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static) num_threads(n_threads_)
+#endif
+    for (size_t i = 0; i < n_particles; ++i) {
+      const auto it_i = it + (i / n) * n_state;
+      if (use_index) {
+        particles_[i].set_state(it_i, index);
+      } else {
+        particles_[i].set_state(it_i);
+      }
+    }
+  }
+
   void set_time(const time_type time) {
     const size_t n_particles = particles_.size();
 #ifdef _OPENMP
