@@ -23,9 +23,8 @@ public:
     y_swap_(model_.size()) {
   }
 
-  // TODO(mjr) Need to add rng ctr arg (or some indices from which it can be
-  // calculated in e.g. update()) to replace rng_state
-  void run(const time_type time_end) {
+  // `particle_id` is used to produce independent RNG streams for each particle
+  void run(const time_type time_end, size_t particle_id) {
     while (time_ < time_end) {
       model_.update(time_, y_.data(), y_swap_.data());
       time_++;
@@ -110,6 +109,7 @@ public:
 private:
   T model_;
   time_type time_;
+  //size_t n_timestep;
 
   std::vector<real_type> y_;
   std::vector<real_type> y_swap_;

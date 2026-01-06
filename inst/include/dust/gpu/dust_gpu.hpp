@@ -22,7 +22,6 @@
 #include "dust/filter_tools.hpp"
 #include "dust/particle.hpp"
 #include "dust/random/density.hpp"
-#include "dust/random/prng.hpp"
 #include "dust/utils.hpp"
 
 namespace dust {

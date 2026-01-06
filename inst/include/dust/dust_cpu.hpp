@@ -47,7 +47,7 @@ public:
     n_particles_total_(n_particles),
     pars_are_shared_(true),
     n_threads_(n_threads),
-    rng_(n_particles_total_ + 1, deterministic), // +1 for filter
+    deterministic_(deterministic),
     errors_(n_particles_total_) {
     initialise(pars, time, true);
     initialise_index();
@@ -65,7 +65,7 @@ public:
     n_particles_total_(n_particles_each_ * pars.size()),
     pars_are_shared_(n_particles != 0),
     n_threads_(n_threads),
-    rng_(n_particles_total_ + 1, deterministic),  // +1 for filter
+    deterministic_(deterministic),
     errors_(n_particles_total_) {
     initialise(pars, time, true);
     initialise_index();
@@ -321,7 +321,7 @@ public:
   }
 
   bool deterministic() const {
-    return rng_.deterministic();
+    return deterministic_;
   }
 
   void set_data(std::map<size_t, std::vector<data_type>> data,
@@ -364,7 +364,7 @@ private:
   const bool pars_are_shared_; // Does the n_particles dimension exist in shape?
   std::vector<size_t> shape_; // shape of output
   size_t n_threads_;
-  dust::random::prng rng_;
+  bool deterministic_;
   std::map<size_t, std::vector<data_type>> data_;
   bool data_is_shared_;
   dust::utils::openmp_errors errors_;

@@ -39,7 +39,8 @@ public:
       pars_are_shared_(true),
       n_threads_(n_threads),
       errors_(n_particles),
-      control_(ctl) {
+      control_(ctl),
+      deterministic_(deterministic) {
     initialise(pars, time, true);
     initialise_index();
     shape_ = {n_particles};
@@ -56,7 +57,8 @@ public:
       pars_are_shared_(n_particles != 0),
       n_threads_(n_threads),
       errors_(n_particles_total_),
-      control_(ctl) {
+      control_(ctl),
+      deterministic_(deterministic) {
     initialise(pars, time, true);
     initialise_index();
     // constructing the shape here is harder than above.
@@ -121,7 +123,7 @@ public:
   }
 
   bool deterministic() const {
-    return rng_.deterministic();
+    return deterministic_;
   }
 
   void set_stochastic_schedule(const std::vector<time_type>& time) {
@@ -370,7 +372,6 @@ private:
   const bool pars_are_shared_; // Does the n_particles dimension exist in shape?
   std::vector<size_t> shape_; // shape of output
   size_t n_threads_;
-  dust::random::prng rng_;
   std::map<size_t, std::vector<data_type>> data_;
   bool data_is_shared_;
   dust::utils::openmp_errors errors_;
