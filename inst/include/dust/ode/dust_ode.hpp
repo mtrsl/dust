@@ -158,7 +158,7 @@ public:
 #endif
     for (size_t i = 0; i < solver_.size(); ++i) {
       try {
-        solver_[i].solve(time_end));
+        solver_[i].solve(time_end);
       } catch (std::exception const& e) {
         errors_.capture(e, i);
       }
@@ -176,7 +176,7 @@ public:
     for (size_t i = 0; i < solver_.size(); ++i) {
       try {
         for (size_t t = 0; t < n_time; ++t) {
-          solver_[i].solve(time_end[t]));
+          solver_[i].solve(time_end[t]);
           size_t offset = t * n_state() * n_particles() + i * n_state();
           solver_[i].state(index_, ret.begin() + offset);
         }
@@ -297,8 +297,7 @@ public:
 
   void resample(const std::vector<real_type>& weights,
                 std::vector<size_t>& index) {
-    dust::filter::resample_index(weights, n_pars_, n_particles_each_, n_threads_,
-                                 index);
+    dust::filter::resample_index(weights, n_pars_, n_particles_each_, n_threads_, index);
     reorder(index);
   }
 
@@ -357,7 +356,7 @@ public:
 #endif
     for (size_t i = 0; i < solver_.size(); ++i) {
       const size_t j = data_is_shared_ ? 0 : i / np;
-      res[i] = solver_[i].compare_data(data[j]));
+      res[i] = solver_[i].compare_data(data[j]);
     }
   }
 
@@ -379,6 +378,8 @@ private:
   std::vector<size_t> index_;
   std::vector<dust::ode::solver<model_type>> solver_;
   ode::control<real_type> control_;
+
+  bool deterministic_;
 
   void initialise(const pars_type& pars, const time_type time, bool set_state) {
     const auto m = model_type(pars);

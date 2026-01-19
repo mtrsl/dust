@@ -641,7 +641,7 @@ private:
       //auto r = rng_state_blank_;
       // TODO: it would be nice to enforce that the rng was not
       // accessed here; it will not work. We could error?
-      const dust::particle<T> p(pars[0], time_, r);
+      const dust::particle<T> p(pars[0], time_);
       n_state_full_ = p.size();
       n_state_ = n_state_full_;
       // TODO(mjr) can't detect rng use by testing if the state has changed any
