@@ -22,14 +22,11 @@ public:
     return 4;
   }
 
-  /// Array of state
-  int_type state[4];
+  /// Counter
+  int_type ctr[4];
 
-  // TODO(mjr) store key here? Might make sense, then we can just pass an
-  // object of this class to the actual rng functions which should be
-  // compatible with their templated definitions? All rng calls will eventually
-  // call next and that's the only place where the key actually matters (as
-  // it's where the actual, raw rng draws are done)
+  /// Key
+  int_type key[2];
 
   /// This flag indicates that the distributions should return the
   /// deterministic expectation of the draw, and not use any random
@@ -38,12 +35,8 @@ public:
 
   /// Accessor method, used to both get and set the underlying state
   __host__ __device__ int_type& operator[](size_t i) {
-    return state[i];
+    return ctr[i];
   }
-
-  /// Is this RNG counter-based? Implies we don't need to store its state more
-  /// permanently, and jumps aren't required.
-  static constexpr bool counter_based = true;
 };
 
 // Implementing these causes lots of duplicate definition errors, and
@@ -70,10 +63,6 @@ inline __host__ __device__ uint32_t next(philox4x32_10& state) {
   // TODO(mjr) Philox4x32-10 generates blocks of 4 u32s at a time. How to
   // handle this? At first just return the first element of a block and ignore
   // the other 3.
-  //
-  // TODO(mjr) The existing function template doesn't allow for a key. How
-  // should this be implemented? A `key` arg that is a dummy when not needed?
-  // Initially get things working by hardcoding a key.
   state[3] += 1;
   return 123;
 }
