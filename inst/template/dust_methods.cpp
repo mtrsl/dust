@@ -53,15 +53,6 @@ SEXP dust_{{target}}_{{name}}_resample(SEXP ptr, cpp11::doubles r_weights) {
   return dust::r::dust_resample<model_{{target}}>(ptr, r_weights);
 }
 
-SEXP dust_{{target}}_{{name}}_rng_state(SEXP ptr, bool first_only, bool last_only) {
-  return dust::r::dust_rng_state<model_{{target}}>(ptr, first_only, last_only);
-}
-
-SEXP dust_{{target}}_{{name}}_set_rng_state(SEXP ptr, cpp11::raws rng_state) {
-  dust::r::dust_set_rng_state<model_{{target}}>(ptr, rng_state);
-  return R_NilValue;
-}
-
 SEXP dust_{{target}}_{{name}}_set_data(SEXP ptr, cpp11::list data,
                                        bool shared) {
   dust::r::dust_set_data<model_{{target}}>(ptr, data, shared);

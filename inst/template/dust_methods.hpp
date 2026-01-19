@@ -38,12 +38,6 @@ void dust_{{target}}_{{name}}_reorder(SEXP ptr, cpp11::sexp r_index);
 SEXP dust_{{target}}_{{name}}_resample(SEXP ptr, cpp11::doubles r_weights);
 
 [[cpp11::register]]
-SEXP dust_{{target}}_{{name}}_rng_state(SEXP ptr, bool first_only, bool last_only);
-
-[[cpp11::register]]
-SEXP dust_{{target}}_{{name}}_set_rng_state(SEXP ptr, cpp11::raws rng_state);
-
-[[cpp11::register]]
 SEXP dust_{{target}}_{{name}}_set_data(SEXP ptr, cpp11::list data, bool shared);
 
 [[cpp11::register]]
