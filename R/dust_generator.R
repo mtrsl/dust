@@ -128,7 +128,7 @@ dust_generator <- R6::R6Class(
     ##' [dust::dust_ode_control()]. It is an error to provide a non-`NULL`
     ##' value for discrete time models.
     initialize = function(pars, time, n_particles, n_threads = 1L,
-                          seed = NULL, pars_multi = FALSE,
+                          pars_multi = FALSE,
                           deterministic = FALSE,
                           gpu_config = NULL, ode_control = NULL) {
     },

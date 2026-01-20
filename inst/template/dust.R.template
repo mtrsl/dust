@@ -120,7 +120,7 @@
     ##' [dust::dust_ode_control()]. It is an error to provide a non-`NULL`
     ##' value for discrete time models.
     initialize = function(pars, time, n_particles, n_threads = 1L,
-                          seed = NULL, pars_multi = FALSE,
+                          pars_multi = FALSE,
                           deterministic = FALSE,
                           gpu_config = NULL, ode_control = NULL) {
       if (is.null(gpu_config)) {
@@ -129,7 +129,7 @@
         private$methods_ <- {{methods_gpu}}
       }
       res <- private$methods_$alloc(pars, pars_multi, time, n_particles,
-                        n_threads, seed, deterministic, gpu_config, ode_control)
+                        n_threads, deterministic, gpu_config, ode_control)
       private$pars_ <- pars
       private$pars_multi_ <- pars_multi
       private$n_threads_ <- n_threads

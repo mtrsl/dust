@@ -7,10 +7,10 @@ cpp11::sexp dust_{{target}}_{{name}}_capabilities() {
 
 SEXP dust_{{target}}_{{name}}_alloc(cpp11::list r_pars, bool pars_multi, cpp11::sexp r_time,
                              cpp11::sexp r_n_particles, int n_threads,
-                             cpp11::sexp r_seed, bool deterministic,
+                             bool deterministic,
                              cpp11::sexp gpu_config, cpp11::sexp ode_control) {
   return dust::r::dust_{{target}}_alloc<{{class}}>(r_pars, pars_multi, r_time, r_n_particles,
-                                        n_threads, r_seed, deterministic,
+                                        n_threads, deterministic,
                                         gpu_config, ode_control);
 }
 
