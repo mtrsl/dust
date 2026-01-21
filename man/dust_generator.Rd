@@ -61,8 +61,6 @@ walk
 \item \href{#method-dust-resample}{\code{dust_generator$resample()}}
 \item \href{#method-dust-info}{\code{dust_generator$info()}}
 \item \href{#method-dust-pars}{\code{dust_generator$pars()}}
-\item \href{#method-dust-rng_state}{\code{dust_generator$rng_state()}}
-\item \href{#method-dust-set_rng_state}{\code{dust_generator$set_rng_state()}}
 \item \href{#method-dust-has_openmp}{\code{dust_generator$has_openmp()}}
 \item \href{#method-dust-has_gpu_support}{\code{dust_generator$has_gpu_support()}}
 \item \href{#method-dust-has_compare}{\code{dust_generator$has_compare()}}
@@ -99,7 +97,6 @@ is the same size.
   time,
   n_particles,
   n_threads = 1L,
-  seed = NULL,
   pars_multi = FALSE,
   deterministic = FALSE,
   gpu_config = NULL,
@@ -125,12 +122,6 @@ your model were compiled with OMP support (details to come).
 \code{n_particles} should be a multiple of \code{n_threads} (e.g., if you use 8
 threads, then you should have 8, 16, 24, etc particles). However, this
 is not compulsory.}
-
-\item{\code{seed}}{The seed to use for the random number generator. Can
-be a positive integer, \code{NULL} (initialise with R's random number
-generator) or a \code{raw} vector of a length that is a multiple of
-32 to directly initialise the generator (e..g., from the
-\code{\link{dust}} object's \verb{$rng_state()} method).}
 
 \item{\code{pars_multi}}{Logical, indicating if \code{pars} should be
 interpreted as a set of different initialisations, and that we
@@ -160,6 +151,12 @@ list will be added in a future version!}
 must be a \code{dust_ode_control} model, produced by
 \code{\link[=dust_ode_control]{dust_ode_control()}}. It is an error to provide a non-\code{NULL}
 value for discrete time models.}
+
+\item{\code{seed}}{The seed to use for the random number generator. Can
+be a positive integer, \code{NULL} (initialise with R's random number
+generator) or a \code{raw} vector of a length that is a multiple of
+32 to directly initialise the generator (e..g., from the
+\code{\link{dust}} object's \verb{$rng_state()} method).}
 }
 \if{html}{\out{</div>}}
 }
@@ -525,57 +522,6 @@ Returns the \code{pars} object that your model was constructed with.
 \if{html}{\out{<div class="r">}}\preformatted{dust_generator$pars()}\if{html}{\out{</div>}}
 }
 
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-dust-rng_state"></a>}}
-\if{latex}{\out{\hypertarget{method-dust-rng_state}{}}}
-\subsection{Method \code{rng_state()}}{
-Returns the state of the random number generator. This returns a
-raw vector of length 32 * n_particles. This can be useful for
-debugging or for initialising other dust objects. The arguments
-\code{first_only} and \code{last_only} are mutually exclusive. If neither is
-given then all all particles states are returned, being 32 bytes
-per particle. The full returned state or \code{first_only} are most
-suitable for reseeding a new dust object.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{dust_generator$rng_state(first_only = FALSE, last_only = FALSE)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{first_only}}{Logical, indicating if we should return only the
-first random number state}
-
-\item{\code{last_only}}{Logical, indicating if we should return only the
-\emph{last} random number state, which does not belong to a particle.}
-}
-\if{html}{\out{</div>}}
-}
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-dust-set_rng_state"></a>}}
-\if{latex}{\out{\hypertarget{method-dust-set_rng_state}{}}}
-\subsection{Method \code{set_rng_state()}}{
-Set the random number state for this model. This
-replaces the RNG state that the model is using with a state of
-your choosing, saved out from a different model object. This method
-is designed to support advanced use cases where it is easier to
-manipulate the state of the random number generator than the
-internal state of the dust object.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{dust_generator$set_rng_state(rng_state)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{rng_state}}{A random number state, as saved out by the
-\verb{$rng_state()} method. Note that unlike \code{seed} as passed to the
-constructor, this \emph{must} be a raw vector of the expected length.}
-}
-\if{html}{\out{</div>}}
-}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-dust-has_openmp"></a>}}
