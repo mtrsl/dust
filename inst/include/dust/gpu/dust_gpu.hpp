@@ -36,10 +36,7 @@ public:
   using data_type = typename T::data_type;
   using internal_type = typename T::internal_type;
   using shared_type = typename T::shared_type;
-  // TODO(mjr) maybe need to keep this if we don't want to completely hardcode
-  // the rng to philox - but rename? Maybe create an rng type (not just state)
-  //using rng_state_type = typename T::rng_state_type;
-  //using rng_int_type = typename rng_state_type::int_type;
+  using rng_state_type = typename T::rng_state_type;
 
   // TODO: fix this elsewhere, perhaps (see also dust/dust_cpu.hpp)
   using filter_state_type = dust::filter::filter_state_device<real_type>;
@@ -60,7 +57,8 @@ public:
     gpu_config_(gpu_config),
     select_needed_(true),
     select_scatter_(false),
-    time_(time) {
+    time_(time),
+    resample_calls_(0) {
     // TODO(mjr) replace seed with key for philox? Need a way to set it (for
     // reproducibility). Maybe at first just hardcode a key then work out a
     // good way to set it (idea - pass key via kernel arg? only idea I can
@@ -85,7 +83,8 @@ public:
     gpu_config_(gpu_config),
     select_needed_(true),
     select_scatter_(false),
-    time_(time) {
+    time_(time),
+    resample_calls_(0) {
     initialise_device_state(pars);
     // constructing the shape here is harder than above.
     if (n_particles > 0) {
@@ -491,15 +490,25 @@ public:
   // Functions used in the device filter
   void resample(dust::gpu::device_array<real_type>& weights,
                 dust::gpu::device_scan_state<real_type>& scan) {
+    rng_state_type resample_rng;
+    resample_rng.ctr[0] = resample_calls_;
+    resample_rng.ctr[1] = n_particles_total_;
+    resample_rng.ctr[2] = 0;
+    resample_rng.ctr[3] = 0;
+    // TODO(mjr) key
+    resample_rng.key[0] = 0;
+    resample_rng.key[1] = 0;
     dust::filter::run_device_resample(n_particles(),
                                       n_pars_effective(),
                                       n_state_full(),
                                       cuda_pars_,
                                       kernel_stream_,
                                       resample_stream_,
+                                      resample_rng,
                                       device_state_,
                                       weights,
                                       scan);
+        resample_calls_++;
   }
 
   // For the particle filter only
@@ -625,6 +634,7 @@ private:
   bool select_needed_;
   bool select_scatter_;
   size_t time_;
+  size_t resample_calls_;
 
   // Naming of functions:
   //

@@ -15,10 +15,12 @@ public:
   using time_type = size_t;
   using real_type = typename T::real_type;
   using data_type = typename T::data_type;
+  using rng_state_type = typename T::rng_state_type;
 
   particle(pars_type pars, time_type time) :
     model_(pars),
     time_(time),
+    timestep_count(0),
     y_(model_.initial(time_)),
     y_swap_(model_.size()) {
   }
@@ -26,8 +28,19 @@ public:
   // `particle_id` is used to produce independent RNG streams for each particle
   void run(const time_type time_end, size_t particle_id) {
     while (time_ < time_end) {
-      model_.update(time_, y_.data(), y_swap_.data());
+      rng_state_type rng_state;
+      rng_state.ctr[0] = timestep_count;
+      rng_state.ctr[1] = particle_id;
+      // Unlike the new GPU graph code, in the CPU version there's just one
+      // update fn so just fix "equation number" here to zero for now
+      rng_state.ctr[2] = 0;
+      rng_state.ctr[3] = 0;
+      // TODO(mjr) make it possible to set the key - re-add some of the "seed" code?
+      rng_state.key[0] = 0;
+      rng_state.key[1] = 0;
+      model_.update(time_, y_.data(), rng_state, y_swap_.data());
       time_++;
+      timestep_count++;
       std::swap(y_, y_swap_);
     }
   }
@@ -109,7 +122,14 @@ public:
 private:
   T model_;
   time_type time_;
-  //size_t n_timestep;
+
+  // Count of the number of timesteps performed, used for setting the RNG
+  // counter. It might be possible to remove this and just use time_, but in
+  // principle it's possible to run some timesteps, set time_ back to zero
+  // (using set_time()), and then run some more timesteps. The second set would
+  // then end up getting the same random draws as the first set, which isn't
+  // what we want
+  size_t timestep_count;
 
   std::vector<real_type> y_;
   std::vector<real_type> y_swap_;

@@ -75,11 +75,13 @@ adjoint(particle<T> particle,
   using time_type = size_t;
 
   // TODO(mjr) replace this (dummy?) rng state with a dummy counter?
-  //typename T::rng_state_type rng_state;
-  //rng_state.deterministic = true;
-  //for (size_t i = 0; i < T::rng_state_type::size(); ++i) {
-    //rng_state[i] = 0;
-  //}
+  // Actually, this should still work as is - the key will be zero, but I think
+  // this is just a dummy anyway
+  typename T::rng_state_type rng_state;
+  rng_state.deterministic = true;
+  for (size_t i = 0; i < T::rng_state_type::size(); ++i) {
+    rng_state[i] = 0;
+  }
 
   auto d_start = data.begin();
   auto d_end = data.end();
@@ -126,12 +128,12 @@ adjoint(particle<T> particle,
   real_type ll = 0;
   while (d != d_end) {
     while (time < d->first) {
-      model.update(time, state_curr, state_next);
+      model.update(time, state_curr, rng_state, state_next);
       state_curr = state_next;
       state_next += n_state;
       ++time;
     }
-    ll += model.compare_data(state_curr, d->second[0]);
+    ll += model.compare_data(state_curr, d->second[0], rng_state);
     ++d;
   }
 

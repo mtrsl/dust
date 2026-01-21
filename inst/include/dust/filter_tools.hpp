@@ -45,24 +45,23 @@ void resample_weight(typename std::vector<real_type>::const_iterator w,
   }
 }
 
-template <typename real_type>
+template <typename real_type, typename rng_state_type>
 void resample_index(const std::vector<real_type>& weights,
                     const size_t n_pars, const size_t n_particles,
                     const size_t n_threads,
-                    std::vector<size_t>& index) {
+                    std::vector<size_t>& index, rng_state_type& rng_state) {
   auto it_weights = weights.begin();
   auto it_index = index.begin();
   if (n_pars == 0) {
     // One parameter set; shuffle among all particles
-    // TODO(mjr) I've removed the rng_state arg but it needs replacing with a counter
-    real_type u = dust::random::random_real<real_type>();
+    real_type u = dust::random::random_real<real_type>(rng_state);
     dust::filter::resample_weight(it_weights, n_particles, u, 0, it_index);
   } else {
     // Multiple parameter set; shuffle within each group
     // independently (and therefore in parallel)
     std::vector<real_type> u;
     for (size_t i = 0; i < n_pars; ++i) {
-      u.push_back(dust::random::random_real<real_type>());
+      u.push_back(dust::random::random_real<real_type>(rng_state));
     }
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(n_threads)

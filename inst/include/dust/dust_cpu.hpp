@@ -33,6 +33,7 @@ public:
   using data_type = typename T::data_type;
   using internal_type = typename T::internal_type;
   using shared_type = typename T::shared_type;
+  using rng_state_type = typename T::rng_state_type;
 
   // TODO: fix this elsewhere, perhaps (see also cuda/dust_gpu.hpp)
   using filter_state_type = dust::filter::filter_state_host<real_type>;
@@ -48,7 +49,8 @@ public:
     pars_are_shared_(true),
     n_threads_(n_threads),
     deterministic_(deterministic),
-    errors_(n_particles_total_) {
+    errors_(n_particles_total_),
+    resample_calls_(0) {
     initialise(pars, time, true);
     initialise_index();
     shape_ = {n_particles};
@@ -66,7 +68,8 @@ public:
     pars_are_shared_(n_particles != 0),
     n_threads_(n_threads),
     deterministic_(deterministic),
-    errors_(n_particles_total_) {
+    errors_(n_particles_total_),
+    resample_calls_(0) {
     initialise(pars, time, true);
     initialise_index();
     // constructing the shape here is harder than above.
@@ -158,7 +161,7 @@ public:
     for (size_t i = 0; i < particles_.size(); ++i) {
       try {
         for (size_t t = 0; t < n_time; ++t) {
-          particles_[i].run(time_end[t]);
+          particles_[i].run(time_end[t], i);
           size_t offset = t * n_state() * n_particles() + i * n_state();
           particles_[i].state(index_, ret.begin() + offset);
         }
@@ -253,9 +256,19 @@ public:
 
   void resample(const std::vector<real_type>& weights,
                 std::vector<size_t>& index) {
-    // TODO(mjr) Also re-add an arg for the rng index (resample rng was the +1 one)
-    dust::filter::resample_index(weights, n_pars_, n_particles_each_, n_threads_, index);
+    rng_state_type resample_rng;
+    resample_rng.ctr[0] = resample_calls_;
+    resample_rng.ctr[1] = n_particles_total_;
+    resample_rng.ctr[2] = 0;
+    resample_rng.ctr[3] = 0;
+    // TODO(mjr) key
+    resample_rng.key[0] = 0;
+    resample_rng.key[1] = 0;
+
+    dust::filter::resample_index(weights, n_pars_, n_particles_each_, n_threads_,
+                                 index, resample_rng);
     reorder(index);
+    resample_calls_++;
   }
 
   size_t n_threads() const {
@@ -368,6 +381,8 @@ private:
   std::map<size_t, std::vector<data_type>> data_;
   bool data_is_shared_;
   dust::utils::openmp_errors errors_;
+
+  size_t resample_calls_;
 
   std::vector<size_t> index_;
   std::vector<dust::particle<T>> particles_;
