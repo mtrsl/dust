@@ -81,7 +81,9 @@ void scatter_device(const size_t* index,
 // parameters should be stored in shared memory.
 template <typename T>
 __global__
-  void compare_particles(size_t n_particles,
+  void compare_particles(size_t time,
+                         size_t n_update_kernels,
+                         size_t n_particles,
                          size_t n_pars,
                          typename T::real_type * state,
                          typename T::real_type * weights,
@@ -152,12 +154,10 @@ __global__
     interleaved<int> p_internal_int(internal_int, i, n_particles);
     interleaved<real_type> p_internal_real(internal_real, i, n_particles);
 
-    // TODO(mjr) What should we set the ctr to here? See also cpu equivalent in
-    // particle.hpp
     rng_state_type rng_state;
-    rng_state.ctr[0] = 0;
+    rng_state.ctr[0] = time;
     rng_state.ctr[1] = i;
-    rng_state.ctr[2] = 0;
+    rng_state.ctr[2] = n_update_kernels;
     rng_state.ctr[3] = 0;
     // TODO(mjr) Need to decide how to allow users to set the key from the R interface
     rng_state.key[0] = 0;

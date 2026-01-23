@@ -20,7 +20,7 @@ public:
   particle(pars_type pars, time_type time) :
     model_(pars),
     time_(time),
-    timestep_count(0),
+    timestep_count_(0),
     y_(model_.initial(time_)),
     y_swap_(model_.size()) {
   }
@@ -29,7 +29,7 @@ public:
   void run(const time_type time_end, size_t particle_id) {
     while (time_ < time_end) {
       rng_state_type rng_state;
-      rng_state.ctr[0] = timestep_count;
+      rng_state.ctr[0] = timestep_count_;
       rng_state.ctr[1] = particle_id;
       // Unlike the new GPU graph code, in the CPU version there's just one
       // update fn so just fix "equation number" here to zero for now
@@ -40,7 +40,7 @@ public:
       rng_state.key[1] = 0;
       model_.update(time_, y_.data(), rng_state, y_swap_.data());
       time_++;
-      timestep_count++;
+      timestep_count_++;
       std::swap(y_, y_swap_);
     }
   }
@@ -111,11 +111,11 @@ public:
     // TODO(mjr) What should we set the ctr to here? See also gpu equivalent in
     // kernels.hpp
     rng_state_type rng_state;
-    rng_state.ctr[0] = 0;
+    rng_state.ctr[0] = timestep_count_;
     rng_state.ctr[1] = particle_id;
-    // Unlike the new GPU graph code, in the CPU version there's just one
-    // update fn so just fix "equation number" here to zero for now
-    rng_state.ctr[2] = 0;
+    // Use update_fn == 1 for this component the compare RNG counter (update_fn
+    // == 0 is used for the actual update fn)
+    rng_state.ctr[2] = 1;
     rng_state.ctr[3] = 0;
     // TODO(mjr) make it possible to set the key - re-add some of the "seed" code?
     rng_state.key[0] = 0;
@@ -141,7 +141,7 @@ private:
   // (using set_time()), and then run some more timesteps. The second set would
   // then end up getting the same random draws as the first set, which isn't
   // what we want
-  size_t timestep_count;
+  size_t timestep_count_;
 
   std::vector<real_type> y_;
   std::vector<real_type> y_swap_;

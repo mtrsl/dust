@@ -571,6 +571,8 @@ public:
                                        cuda_pars_.compare.block_size,
                                        cuda_pars_.compare.shared_size_bytes,
                                        kernel_stream_.stream()>>>(
+                     time_,
+                     dust::gpu::get_num_update_gpu_kernels<T>(),
                      n_particles(),
                      n_pars_effective(),
                      device_state_.y.data(),
@@ -590,6 +592,8 @@ public:
     const bool use_shared_int = false;
     const bool use_shared_real = false;
     dust::gpu::compare_particles<T>(
+                     time_,
+                     dust::gpu::get_num_update_gpu_kernels<T>(),
                      n_particles(),
                      n_pars_effective(),
                      device_state_.y.data(),
