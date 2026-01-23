@@ -362,7 +362,7 @@ public:
       const size_t j = data_is_shared_ ? 0 : i / np;
       // TODO(mjr) which rng index to pass to compare_data (when these args get
       // added)? It was previously passing rng_.state(i)
-      res[i] = particles_[i].compare_data(data[j]);
+      res[i] = particles_[i].compare_data(data[j], i);
     }
   }
 

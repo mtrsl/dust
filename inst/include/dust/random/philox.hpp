@@ -96,7 +96,7 @@ public:
     return ctr[i];
   }
 
- __host__ __device__
+  __host__ __device__
   uint32_t next_u32() {
     if (idx == 4) {
       buf = generate_block(ctr, key);

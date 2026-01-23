@@ -356,7 +356,7 @@ public:
 #endif
     for (size_t i = 0; i < solver_.size(); ++i) {
       const size_t j = data_is_shared_ ? 0 : i / np;
-      res[i] = solver_[i].compare_data(data[j]);
+      res[i] = solver_[i].compare_data(data[j], i);
     }
   }
 

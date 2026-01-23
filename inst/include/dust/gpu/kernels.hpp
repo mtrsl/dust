@@ -33,7 +33,8 @@ typename T::real_type compare_gpu(
                    interleaved<int> internal_int,
                    interleaved<typename T::real_type> internal_real,
                    const int * shared_int,
-                   const typename T::real_type * shared_real);
+                   const typename T::real_type * shared_real,
+                   typename T::rng_state_type& rng_state);
 
 // __global__ for shuffling particles
 template <typename real_type>
@@ -96,6 +97,7 @@ __global__
                          bool data_is_shared) {
   // This setup is mostly shared with run_particles
   using real_type = typename T::real_type;
+  using rng_state_type = typename T::rng_state_type;
   const size_t n_particles_each = n_particles / n_pars;
 
 #ifdef __CUDA_ARCH__
@@ -150,12 +152,24 @@ __global__
     interleaved<int> p_internal_int(internal_int, i, n_particles);
     interleaved<real_type> p_internal_real(internal_real, i, n_particles);
 
+    // TODO(mjr) What should we set the ctr to here? See also cpu equivalent in
+    // particle.hpp
+    rng_state_type rng_state;
+    rng_state.ctr[0] = 0;
+    rng_state.ctr[1] = i;
+    rng_state.ctr[2] = 0;
+    rng_state.ctr[3] = 0;
+    // TODO(mjr) Need to decide how to allow users to set the key from the R interface
+    rng_state.key[0] = 0;
+    rng_state.key[1] = 0;
+
     weights[i] = compare_gpu<T>(p_state,
                                 *shared_state.data,
                                 p_internal_int,
                                 p_internal_real,
                                 shared_state.shared_int,
-                                shared_state.shared_real);
+                                shared_state.shared_real,
+                                rng_state);
     SYNCWARP
   }
 }

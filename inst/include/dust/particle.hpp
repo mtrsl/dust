@@ -107,8 +107,20 @@ public:
     }
   }
 
-  real_type compare_data(const data_type& data) {
-    return model_.compare_data(y_.data(), data);
+  real_type compare_data(const data_type& data, size_t particle_id) {
+    // TODO(mjr) What should we set the ctr to here? See also gpu equivalent in
+    // kernels.hpp
+    rng_state_type rng_state;
+    rng_state.ctr[0] = 0;
+    rng_state.ctr[1] = particle_id;
+    // Unlike the new GPU graph code, in the CPU version there's just one
+    // update fn so just fix "equation number" here to zero for now
+    rng_state.ctr[2] = 0;
+    rng_state.ctr[3] = 0;
+    // TODO(mjr) make it possible to set the key - re-add some of the "seed" code?
+    rng_state.key[0] = 0;
+    rng_state.key[1] = 0;
+    return model_.compare_data(y_.data(), data, rng_state);
   }
 
   T& model() {
