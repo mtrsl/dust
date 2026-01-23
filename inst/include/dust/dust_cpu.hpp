@@ -49,11 +49,15 @@ public:
     pars_are_shared_(true),
     n_threads_(n_threads),
     deterministic_(deterministic),
-    errors_(n_particles_total_),
-    resample_calls_(0) {
+    errors_(n_particles_total_) {
     initialise(pars, time, true);
     initialise_index();
     shape_ = {n_particles};
+
+    // Set counter/key for resample RNG - same as in dust_gpu class
+    resample_rng_.ctr = {0, static_cast<uint32_t>(n_particles_total_), 0, 0};
+    // TODO(mjr) key
+    resample_rng_.key = {0, 0};
   }
 
   dust_cpu(const std::vector<pars_type>& pars,
@@ -68,8 +72,7 @@ public:
     pars_are_shared_(n_particles != 0),
     n_threads_(n_threads),
     deterministic_(deterministic),
-    errors_(n_particles_total_),
-    resample_calls_(0) {
+    errors_(n_particles_total_) {
     initialise(pars, time, true);
     initialise_index();
     // constructing the shape here is harder than above.
@@ -79,6 +82,11 @@ public:
     for (auto i : shape) {
       shape_.push_back(i);
     }
+
+    // Set counter/key for resample RNG - same as in dust_gpu class
+    resample_rng_.ctr = {0, static_cast<uint32_t>(n_particles_total_), 0, 0};
+    // TODO(mjr) key
+    resample_rng_.key = {0, 0};
   }
 
   void set_pars(const pars_type& pars, bool set_state) {
@@ -256,19 +264,12 @@ public:
 
   void resample(const std::vector<real_type>& weights,
                 std::vector<size_t>& index) {
-    rng_state_type resample_rng;
-    resample_rng.ctr[0] = resample_calls_;
-    resample_rng.ctr[1] = n_particles_total_;
-    resample_rng.ctr[2] = 0;
-    resample_rng.ctr[3] = 0;
-    // TODO(mjr) key
-    resample_rng.key[0] = 0;
-    resample_rng.key[1] = 0;
+    resample_rng_.ctr[0] += 1;
+    resample_rng_.ctr[3] = 0;
 
     dust::filter::resample_index(weights, n_pars_, n_particles_each_, n_threads_,
-                                 index, resample_rng);
+                                 index, resample_rng_);
     reorder(index);
-    resample_calls_++;
   }
 
   size_t n_threads() const {
@@ -382,7 +383,7 @@ private:
   bool data_is_shared_;
   dust::utils::openmp_errors errors_;
 
-  size_t resample_calls_;
+  rng_state_type resample_rng_;
 
   std::vector<size_t> index_;
   std::vector<dust::particle<T>> particles_;

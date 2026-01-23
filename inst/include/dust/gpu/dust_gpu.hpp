@@ -57,8 +57,7 @@ public:
     gpu_config_(gpu_config),
     select_needed_(true),
     select_scatter_(false),
-    time_(time),
-    resample_calls_(0) {
+    time_(time) {
     // TODO(mjr) replace seed with key for philox? Need a way to set it (for
     // reproducibility). Maybe at first just hardcode a key then work out a
     // good way to set it (idea - pass key via kernel arg? only idea I can
@@ -66,6 +65,15 @@ public:
     //initialise_device_state(std::vector<pars_type>(1, pars), seed);
     initialise_device_state(std::vector<pars_type>(1, pars));
     shape_ = {n_particles};
+
+    // Set the counter and key of the resample RNG. The "particle id" for this
+    // RNG is set to be one more than the highest actual particle to ensure
+    // independence of streams. The "timestep" will be incremented each time
+    // resample is called, while the "equation id"/"kernel id" will be kept at
+    // 0.
+    resample_rng_.ctr = {0, static_cast<uint32_t>(n_particles_total_), 0, 0};
+    // TODO(mjr) key
+    resample_rng_.key = {0, 0};
   }
 
   dust_gpu(const std::vector<pars_type>& pars, const size_t time,
@@ -83,8 +91,7 @@ public:
     gpu_config_(gpu_config),
     select_needed_(true),
     select_scatter_(false),
-    time_(time),
-    resample_calls_(0) {
+    time_(time) {
     initialise_device_state(pars);
     // constructing the shape here is harder than above.
     if (n_particles > 0) {
@@ -93,6 +100,11 @@ public:
     for (auto i : shape) {
       shape_.push_back(i);
     }
+
+    // Set counter/key for resample RNG - same as other constructor above
+    resample_rng_.ctr = {0, static_cast<uint32_t>(n_particles_total_), 0, 0};
+    // TODO(mjr) key
+    resample_rng_.key = {0, 0};
   }
 
   // We only need a destructor when running with cuda profiling; don't
@@ -490,25 +502,20 @@ public:
   // Functions used in the device filter
   void resample(dust::gpu::device_array<real_type>& weights,
                 dust::gpu::device_scan_state<real_type>& scan) {
-    rng_state_type resample_rng;
-    resample_rng.ctr[0] = resample_calls_;
-    resample_rng.ctr[1] = n_particles_total_;
-    resample_rng.ctr[2] = 0;
-    resample_rng.ctr[3] = 0;
-    // TODO(mjr) key
-    resample_rng.key[0] = 0;
-    resample_rng.key[1] = 0;
+    // Each time resample is called, increment the "timestep" part of the ctr
+    // and reset the draws part
+    resample_rng_.ctr[0] += 1;
+    resample_rng_.ctr[3] = 0;
     dust::filter::run_device_resample(n_particles(),
                                       n_pars_effective(),
                                       n_state_full(),
                                       cuda_pars_,
                                       kernel_stream_,
                                       resample_stream_,
-                                      resample_rng,
+                                      resample_rng_,
                                       device_state_,
                                       weights,
                                       scan);
-        resample_calls_++;
   }
 
   // For the particle filter only
@@ -615,11 +622,7 @@ private:
 
   std::vector<size_t> shape_; // shape of output
   size_t n_threads_;
-  // TODO(mjr) maybe replace with a semi-magic index (n_kernels + 1 for that component of the index tuple?)
-  // Wouldn't need to store it here though - just need to also change odin.dust
-  // to use this index. Maybe similar applies elsewhere? Are there any other
-  // "extra" RNGs anywhere?
-  //rng_state_type resample_rng_; // for the filter
+  rng_state_type resample_rng_; // for the filter
   gpu::gpu_config gpu_config_;
 
   // GPU support
@@ -634,7 +637,6 @@ private:
   bool select_needed_;
   bool select_scatter_;
   size_t time_;
-  size_t resample_calls_;
 
   // Naming of functions:
   //
